@@ -156,10 +156,15 @@ main{display:flex;flex-direction:column;gap:22px;padding-top:18px}
 .field label{font-size:.82rem;color:var(--muted);font-weight:500}
 input{font:inherit;font-size:16px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:11px 12px;width:100%;min-width:0}
 .amount{font-family:var(--f-mono);font-size:1.8rem;padding:10px 14px}
-.envpick{display:flex;flex-wrap:wrap;gap:6px}
-.envpick button{border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:7px 12px;font-size:.9rem}
-.envpick button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.envpick small{font-family:var(--f-mono);opacity:.75;margin-left:4px}
+/* Envelope picker: a 2-column grid of equal tiles, scrolling inside its own box when long */
+.envpick{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:min(46vh,340px);overflow-y:auto;overscroll-behavior:contain;padding:2px;-webkit-overflow-scrolling:touch}
+.envtile{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-height:64px;padding:10px 12px;text-align:left;border:1px solid var(--line);background:var(--paper);border-radius:12px;min-width:0}
+.envtile .n{font-weight:600;font-size:.92rem;line-height:1.25;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.envtile .b{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:.8rem;color:var(--muted)}
+.envtile.neg .b{color:var(--over)}
+.envtile.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.envtile.on .b{color:var(--accent-ink);opacity:.85}
+@media (min-width:600px){.envpick{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .prows{display:flex;flex-direction:column;gap:8px}
 .prow{display:grid;grid-template-columns:minmax(0,1fr) 116px 34px;gap:8px;align-items:center}
 .prow button{border:0;background:none;color:var(--muted);font-size:1.2rem}

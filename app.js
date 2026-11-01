@@ -429,11 +429,15 @@ function openAdd(envId) {
   $('#add-pay').hidden = cur !== THIS;
   renderPick(s); openSheet('addSheet'); setTimeout(() => $('#add-amount').focus(), 60);
 }
-function renderPick(s) {
-  $('#add-envs').innerHTML = s.env.map(e => {
-    const left = (+e.limit || 0) - (s.byEnv[e.id] || 0);
-    return `<button type="button" class="${e.id === addEnv ? 'on' : ''}" data-pick="${esc(e.id)}" aria-pressed="${e.id === addEnv}">${esc(e.name)}<small>${left < 0 ? '−' + fmt(-left) : fmt(left)}</small></button>`;
+// One even-sized tile per envelope: name on top, balance below. Tap again to deselect.
+function envTiles(s, selected) {
+  return s.env.map(e => {
+    const left = (+e.limit || 0) - (s.byEnv[e.id] || 0), on = e.id === selected;
+    return `<button type="button" class="envtile${on ? ' on' : ''}${left < 0 ? ' neg' : ''}" data-pick="${esc(e.id)}" aria-pressed="${on}"><span class="n">${esc(e.name)}</span><span class="b">${left < 0 ? '−' + fmt(-left) + ' over' : fmt(left) + ' left'}</span></button>`;
   }).join('');
+}
+function renderPick(s) {
+  $('#add-envs').innerHTML = envTiles(s, addEnv);
   renderAddSummary();
 }
 function renderAddSummary() {
@@ -448,7 +452,7 @@ function renderAddSummary() {
   a.className = 'after' + (after < 0 ? ' neg' : '');
   a.textContent = after < 0 ? `After this: ${fmt(-after)} over the limit` : `After this: ${fmt(after)} left`;
 }
-$('#add-envs').addEventListener('click', ev => { const b = ev.target.closest('[data-pick]'); if (!b) return; addEnv = b.dataset.pick; renderPick(stats(cur)); });
+$('#add-envs').addEventListener('click', ev => { const b = ev.target.closest('[data-pick]'); if (!b) return; addEnv = addEnv === b.dataset.pick ? null : b.dataset.pick; renderPick(stats(cur)); });
 $('#add-amount').addEventListener('input', renderAddSummary);
 $('#add-change').addEventListener('click', () => { $('#f-add-envs').hidden = !$('#f-add-envs').hidden; });
 $('#add-pay').addEventListener('click', () => {
@@ -683,11 +687,8 @@ function renderPay() {
   const s = stats(cur), r = rules(), amt = parseFloat($('#pay-amount').value) || 0;
   let why = '';
   if (!pay.picked) { const a = autoEnvelope(amt); pay.envId = a ? a.id : null; why = a ? a.why : ''; }
-  $('#pay-why').textContent = pay.picked ? '' : (why || 'Pick the envelope this payment comes from.');
-  $('#pay-envs').innerHTML = s.env.map(e => {
-    const left = (+e.limit || 0) - (s.byEnv[e.id] || 0);
-    return `<button type="button" class="${e.id === pay.envId ? 'on' : ''}" data-pick="${esc(e.id)}" aria-pressed="${e.id === pay.envId}">${esc(e.name)}<small>${left < 0 ? '−' + fmt(-left) : fmt(left)}</small></button>`;
-  }).join('');
+  $('#pay-why').textContent = pay.envId ? (pay.picked ? '' : why) : 'Pick the envelope this payment comes from.';
+  $('#pay-envs').innerHTML = envTiles(s, pay.envId);
 
   const e = s.env.find(x => x.id === pay.envId), warn = $('#pay-warn');
   pay.needOverride = false; pay.blocked = false; warn.hidden = true; $('#f-pay-reason').hidden = true; $('#pay-raise').hidden = true;
@@ -730,7 +731,11 @@ function renderPayApps(ready, amt) {
   box.innerHTML = h;
 }
 
-$('#pay-envs').addEventListener('click', ev => { const b = ev.target.closest('[data-pick]'); if (!b) return; pay.envId = b.dataset.pick; pay.picked = true; renderPay(); });
+$('#pay-envs').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-pick]'); if (!b) return;
+  pay.envId = pay.envId === b.dataset.pick ? null : b.dataset.pick; // tap the selected one again to deselect
+  pay.picked = true; renderPay();
+});
 $('#pay-amount').addEventListener('input', renderPay);
 $('#pay-reason').addEventListener('input', renderPay);
 $('#pay-back').addEventListener('click', () => { pay = null; showPayStep('scan'); startScan(); });
