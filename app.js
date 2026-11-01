@@ -810,7 +810,8 @@ function upiQuery(amt) {
   q.set('pa', pay.pa); if (pay.pn) q.set('pn', pay.pn);
   if (!pay.fixedAmount) q.set('am', amt.toFixed(2));
   q.set('cu', 'INR');
-  const note = $('#pay-note').value.trim(); if (note && !q.get('tn')) q.set('tn', note.slice(0, 50));
+  // Privacy: the user's own note stays in SpendWise. Only what the payee's QR already carried
+  // (payee, amount, the merchant's own reference) is passed to the UPI app.
   return [...q].map(([k, v]) => k + '=' + encodeURIComponent(v).replace(/%40/g, '@')).join('&');
 }
 
