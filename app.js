@@ -308,10 +308,10 @@ function approvalsHTML() {
   if (!pend.length) return '';
   let h = `<section class="approvals"><div class="sechead"><h2>Waiting for approval</h2><span class="label">${pend.length}</span></div>`;
   for (const r of pend) {
-    const mine = r.requestedBy === me.uid;
-    const lines = r.changes.map(c => `<li><b>${esc(c.name)}</b> <span class="mono">${fmtRule(c, c.from)} → ${fmtRule(c, c.to)}</span> <span class="up">+${fmtRule(c, c.to - c.from)}</span></li>`).join('');
+    const mine = r.requestedBy === me.uid, isTxn = r.changes.some(c => c.kind === 'txn');
+    const lines = r.changes.map(describeChange).join('');
     h += `<div class="appr ${mine ? 'mine' : ''}">
-      <p class="who">${mine ? 'You asked ' + esc(partnerLabel()) : esc(cap(whoName(r.requestedBy))) + ' asks to raise'} · ${label(r.month, true)}</p>
+      <p class="who">${mine ? 'You asked ' + esc(partnerLabel()) : esc(cap(whoName(r.requestedBy))) + (isTxn ? ' asks to change a logged entry' : ' asks to raise')} · ${label(r.month, true)}</p>
       <ul>${lines}</ul>${r.reason ? `<p class="reason">“${esc(r.reason)}”</p>` : ''}
       <div class="row">${mine
         ? `<button class="btn small" data-act="rq-cancel" data-id="${esc(r.id)}">Withdraw request</button>`
@@ -321,12 +321,42 @@ function approvalsHTML() {
   return h + '</section>';
 }
 
+// One line per requested change: a limit increase, a rule change, or an edit to a logged entry.
+function describeChange(c) {
+  if (c.kind === 'txn') {
+    const b = c.before || {}, a = c.after || {}, when = b.date ? new Date(b.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+    if (c.action === 'delete') return `<li><b>Delete</b> ${fmt(b.amount)} from ${esc(b.envelopeName || 'an envelope')} <span class="quiet">(${when}${b.note ? ', ' + esc(b.note) : ''})</span></li>`;
+    if (c.action === 'toOpening') return `<li><b>Move to saved before this month:</b> ${fmt(a.amount)} in ${esc(a.envelopeName || '')} <span class="quiet">(logged ${when})</span></li>`;
+    const bits = [];
+    if (a.amount !== b.amount) bits.push(`<span class="mono">${fmt(b.amount)} → ${fmt(a.amount)}</span>`);
+    if (a.envelopeId !== b.envelopeId) bits.push(`envelope ${esc(b.envelopeName || '')} → ${esc(a.envelopeName || '')}`);
+    if (a.date !== b.date) bits.push(`date ${esc(b.date)} → ${esc(a.date)}`);
+    if ((a.note || '') !== (b.note || '')) bits.push('note changed');
+    return `<li><b>Edit</b> ${esc(b.envelopeName || 'entry')} <span class="quiet">(${when})</span>: ${bits.join(' · ') || 'no change'}</li>`;
+  }
+  return `<li><b>${esc(c.name)}</b> <span class="mono">${fmtRule(c, c.from)} → ${fmtRule(c, c.to)}</span> <span class="up">+${fmtRule(c, c.to - c.from)}</span></li>`;
+}
+
+// Applies an entry edit inside a batch: edit in place, delete, or move into the savings opening balance.
+function applyTxnChange(batch, txId, action, after) {
+  const ref = doc(fs, 'households', hid, 'txns', txId);
+  if (!txns.some(t => t.id === txId)) return false; // already gone
+  if (action === 'delete') batch.delete(ref);
+  else if (action === 'toOpening') {
+    const ft = fundTotal({ id: after.envelopeId, name: after.envelopeName || '' });
+    batch.delete(ref);
+    batch.update(hhRef(), { ['funds.' + after.envelopeId]: { opening: Math.round(ft.opening + after.amount), name: after.envelopeName || '', updatedAt: Date.now(), by: me.uid } });
+  } else batch.update(ref, { ...after, editedAt: Date.now(), editedBy: me.uid });
+  return true;
+}
+
 function decideRequest(id, approve) {
   const r = requests.find(x => x.id === id);
   if (!r || r.status !== 'pending' || r.requestedBy === me.uid) return;
   const batch = writeBatch(fs);
   if (approve) {
-    const envChanges = r.changes.filter(c => c.kind !== 'rule'), ruleChanges = r.changes.filter(c => c.kind === 'rule');
+    for (const c of r.changes.filter(c => c.kind === 'txn')) applyTxnChange(batch, c.txnId, c.action, c.after);
+    const envChanges = r.changes.filter(c => !c.kind), ruleChanges = r.changes.filter(c => c.kind === 'rule');
     if (envChanges.length) {
       const plan = months[r.month];
       const envs = plan ? plan.envelopes.map(e => ({ ...e })) : [];
@@ -343,7 +373,8 @@ function decideRequest(id, approve) {
   }
   batch.update(doc(fs, 'households', hid, 'requests', id), { status: approve ? 'approved' : 'declined', decidedBy: me.uid, decidedAt: Date.now() });
   batch.commit().catch(x => { console.error(x); toast('Could not save your answer. Try again.'); });
-  toast(approve ? 'Approved. The new limits apply now.' : 'Declined. The limits stay as they were.');
+  const isTxn = r.changes.some(c => c.kind === 'txn');
+  toast(approve ? (isTxn ? 'Approved. The entry is updated.' : 'Approved. The new limits apply now.') : (isTxn ? 'Declined. The entry stays as it was.' : 'Declined. The limits stay as they were.'));
 }
 
 function ledgerHTML(s) {
@@ -368,8 +399,9 @@ function ledgerHTML(s) {
       const title = x.note || x.payeeName || en;
       const meta = [title !== en ? en : '', x.payeeName && title !== x.payeeName ? x.payeeName : '', x.via === 'upi' ? 'UPI' : '', who ? 'by ' + who : ''].filter(Boolean).map(esc).join(' · ');
       const savingTx = isSave(s.env.find(v => v.id === x.envelopeId));
-      h += `<div class="tx"><div class="what"><div class="note">${esc(title)}${savingTx ? ' <span class="pill done">Saving</span>' : ''}${x.override ? ' <span class="pill warn">Override</span>' : ''}</div><div class="meta">${meta}${x.override && x.overrideReason ? '<br>Reason: ' + esc(x.overrideReason) : ''}</div></div>
-        <span class="amt">${fmt(x.amount)}</span><button class="del ${armed === x.id ? 'arm' : ''}" data-act="del" data-id="${esc(x.id)}">${armed === x.id ? 'Confirm' : 'Delete'}</button></div>`;
+      const pendingEdit = requests.some(r => r.status === 'pending' && r.changes.some(c => c.kind === 'txn' && c.txnId === x.id));
+      h += `<div class="tx"><div class="what"><div class="note">${esc(title)}${savingTx ? ' <span class="pill done">Saving</span>' : ''}${x.override ? ' <span class="pill warn">Override</span>' : ''}${pendingEdit ? ' <span class="pill warn">Change pending</span>' : ''}</div><div class="meta">${meta}${x.editedAt ? ' · edited' : ''}${x.override && x.overrideReason ? '<br>Reason: ' + esc(x.overrideReason) : ''}</div></div>
+        <span class="amt">${fmt(x.amount)}</span><button class="del" data-act="edit-tx" data-id="${esc(x.id)}">Edit</button></div>`;
     }
     h += '</div>';
   }
@@ -461,7 +493,7 @@ function cumChart(el, k) {
 
 /* ---------- sheets ---------- */
 function openSheet(id) { $('#backdrop').hidden = false; $('#' + id).hidden = false; }
-function closeSheets() { stopScan(); $('#backdrop').hidden = true; for (const id of ['addSheet', 'planSheet', 'acctSheet', 'paySheet', 'confirmSheet', 'fundsSheet']) $('#' + id).hidden = true; }
+function closeSheets() { stopScan(); $('#backdrop').hidden = true; for (const id of ['addSheet', 'planSheet', 'acctSheet', 'paySheet', 'confirmSheet', 'fundsSheet', 'editSheet']) $('#' + id).hidden = true; }
 
 function openAdd(envId) {
   const s = stats(cur); if (!s.plan) return;
@@ -904,6 +936,62 @@ function logPayment(p) {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(checkPending, 300); });
 
+/* ---------- edit a logged entry ---------- */
+// Own entries from the last 24 hours can be fixed directly. Older ones, or a partner's, need their approval.
+const editNeedsOk = x => partnerIds().length > 0 && (x.by !== me.uid || !x.at || Date.now() - x.at > 24 * 3600e3);
+let editTx = null, delArmed = false;
+function openEdit(id) {
+  const x = txns.find(t => t.id === id); if (!x) return;
+  editTx = x; delArmed = false;
+  const s = stats(x.month), known = s.env.some(e => e.id === x.envelopeId);
+  $('#ed-env').innerHTML = s.env.map(e => `<option value="${esc(e.id)}"${e.id === x.envelopeId ? ' selected' : ''}>${esc(e.name)}${isSave(e) ? ' (saving)' : ''}</option>`).join('')
+    + (known ? '' : `<option value="${esc(x.envelopeId)}" selected>${esc(x.envelopeName || 'Removed envelope')}</option>`);
+  $('#ed-amount').value = x.amount; $('#ed-note').value = x.note || ''; $('#ed-reason').value = ''; $('#ed-past').checked = false;
+  const d = $('#ed-date'); d.min = x.month + '-01'; d.max = x.month + '-' + pad(daysIn(x.month)); d.value = x.date;
+  $('#ed-meta').textContent = [label(x.month, true), 'added by ' + whoName(x.by), x.via === 'upi' ? 'paid by UPI' : '', x.payeeName || ''].filter(Boolean).join(' · ');
+  const need = editNeedsOk(x);
+  $('#ed-ok').hidden = !need; $('#f-ed-reason').hidden = !need;
+  if (need) $('#ed-ok').textContent = `Changes to this entry need ${partnerLabel()}’s approval, because ${x.by !== me.uid ? 'they added it' : 'it’s more than a day old'}.`;
+  $('#ed-save').textContent = need ? 'Send for approval' : 'Save changes';
+  $('#ed-del').textContent = 'Delete entry'; $('#ed-del').classList.remove('arm');
+  msg($('#ed-err'), ''); renderEdit(); openSheet('editSheet');
+}
+function renderEdit() {
+  const e = stats(editTx.month).env.find(v => v.id === $('#ed-env').value);
+  $('#f-ed-past').hidden = !isSave(e);
+}
+$('#ed-env').addEventListener('change', renderEdit);
+function sendTxnRequest(x, action, before, after) {
+  setDoc(doc(collection(fs, 'households', hid, 'requests')), {
+    month: x.month, reason: $('#ed-reason').value.trim(), status: 'pending', requestedBy: me.uid, requestedAt: Date.now(),
+    changes: [{ kind: 'txn', action, txnId: x.id, name: before.envelopeName || 'Entry', from: before.amount, to: after ? after.amount : 0, before, after: after || null }],
+  }).catch(err => { console.error(err); toast('The request could not be sent. Try again.'); });
+}
+$('#ed-save').addEventListener('click', () => {
+  const x = editTx, err = $('#ed-err'), s = stats(x.month);
+  const amt = Math.round((parseFloat($('#ed-amount').value) || 0) * 100) / 100, envId = $('#ed-env').value, date = $('#ed-date').value;
+  const e = s.env.find(v => v.id === envId);
+  if (!(amt > 0)) return msg(err, 'Enter an amount above zero.');
+  if (!date || !date.startsWith(x.month)) return msg(err, 'Pick a date in ' + label(x.month) + '.');
+  const toPast = isSave(e) && $('#ed-past').checked;
+  const before = { amount: x.amount, envelopeId: x.envelopeId, envelopeName: x.envelopeName || '', note: x.note || '', date: x.date };
+  const after = { amount: amt, envelopeId: envId, envelopeName: e ? e.name : (x.envelopeName || ''), note: $('#ed-note').value.trim(), date };
+  const action = toPast ? 'toOpening' : 'edit';
+  if (!toPast && JSON.stringify(before) === JSON.stringify(after)) { closeSheets(); return; }
+  if (editNeedsOk(x)) { sendTxnRequest(x, action, before, after); closeSheets(); toast(`Sent to ${partnerLabel()} for approval.`); return; }
+  const batch = writeBatch(fs); applyTxnChange(batch, x.id, action, after);
+  batch.commit().catch(e2 => { console.error(e2); toast('The change could not be saved. Try again.'); });
+  closeSheets(); toast(toPast ? `Moved to ${after.envelopeName}’s saved-to-date total. This month is unchanged.` : 'Entry updated');
+});
+$('#ed-del').addEventListener('click', () => {
+  const x = editTx, btn = $('#ed-del');
+  if (!delArmed) { delArmed = true; btn.textContent = 'Tap again to delete'; btn.classList.add('arm'); return; }
+  const before = { amount: x.amount, envelopeId: x.envelopeId, envelopeName: x.envelopeName || '', note: x.note || '', date: x.date };
+  if (editNeedsOk(x)) { sendTxnRequest(x, 'delete', before, null); closeSheets(); toast(`Delete request sent to ${partnerLabel()}.`); return; }
+  deleteDoc(doc(fs, 'households', hid, 'txns', x.id)).catch(() => toast('Could not delete. Try again.'));
+  closeSheets(); toast('Entry deleted');
+});
+
 /* ---------- savings opening balances ---------- */
 // One-time amounts already saved before using the app (e.g. chit instalments paid so far).
 function openFunds() {
@@ -955,6 +1043,7 @@ $('#main').addEventListener('click', ev => {
   else if (a === 'fresh') openPlan('fresh');
   else if (a === 'edit') openPlan('edit');
   else if (a === 'funds') openFunds();
+  else if (a === 'edit-tx') openEdit(b.dataset.id);
   else if (a === 'filter') { filterEnv = b.dataset.env; render(); }
   else if (a === 'rq-approve') decideRequest(b.dataset.id, true);
   else if (a === 'rq-decline') decideRequest(b.dataset.id, false);

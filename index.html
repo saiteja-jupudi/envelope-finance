@@ -195,6 +195,26 @@
   </div>
 </section>
 
+<section id="editSheet" class="sheet" hidden aria-label="Edit entry">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <h2>Edit entry</h2>
+    <p id="ed-meta" class="quiet"></p>
+    <div class="field"><label for="ed-amount">Amount (₹)</label><input id="ed-amount" class="amount" type="number" inputmode="decimal" min="0" step="1"></div>
+    <div class="field"><label for="ed-env">Envelope</label><select id="ed-env"></select></div>
+    <label class="check" id="f-ed-past" hidden><input type="checkbox" id="ed-past"> <span>Move to “saved before this month”<br><small class="quiet">Removes it from this month and adds it to the saved-to-date total. Use this for savings made from earlier salaries.</small></span></label>
+    <div class="field"><label for="ed-note">What was it for? (optional)</label><input id="ed-note" type="text" maxlength="80"></div>
+    <div class="field"><label for="ed-date">Date</label><input id="ed-date" type="date"></div>
+    <p id="ed-ok" class="note" hidden></p>
+    <div class="field" id="f-ed-reason" hidden><label for="ed-reason">Reason (your partner sees this)</label><input id="ed-reason" type="text" maxlength="120" placeholder="e.g. Entered the chit total by mistake"></div>
+    <div class="sheet-actions">
+      <p id="ed-err" class="err" hidden></p>
+      <div class="row"><button id="ed-save" class="btn primary">Save changes</button><button class="btn ghost" data-close>Cancel</button></div>
+      <button id="ed-del" class="btn small danger" style="align-self:flex-start">Delete entry</button>
+    </div>
+  </div>
+</section>
+
 <section id="fundsSheet" class="sheet" hidden aria-label="Savings opening balances">
   <div class="sheet-in">
     <div class="grab"></div>
