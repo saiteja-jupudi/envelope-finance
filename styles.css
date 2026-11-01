@@ -245,7 +245,7 @@ td.o{color:var(--over);background:var(--over-soft)}
 
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 84px);z-index:30;background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:999px;font-size:.9rem;max-width:calc(100% - 32px)}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .22s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}}
-@media (min-width:600px){.facts{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (min-width:600px){.facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* Savings & investments */
 .pos{color:var(--green)}
@@ -281,3 +281,19 @@ fieldset.fund legend{font-family:var(--f-display);font-weight:700;padding:0 6px}
 /* A savings tile with a fixed-term plan takes the full row, so both blocks read easily */
 .env.wide{grid-column:1/-1}
 .env .sublabel{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;font-weight:600;color:var(--muted)}
+/* Summary: four plain tiles, then one bar showing how the salary is split */
+.stiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.stile{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--paper);min-width:0}
+.stile b{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-weight:500;font-size:1.25rem;overflow-wrap:anywhere}
+.stile small{font-size:.76rem;color:var(--muted);line-height:1.3}
+.stile.bad{border-color:var(--over)}
+.stile.bad b,.stile.bad .label{color:var(--over)}
+@media (min-width:600px){.stiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.splitbar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--line)}
+.splitbar i{display:block;height:100%}
+.splitbar .u,.legend2 .u{background:var(--accent)}
+.splitbar .r,.legend2 .r{background:color-mix(in srgb,var(--teal) 45%,var(--card))}
+.splitbar .f,.legend2 .f{background:var(--yellow)}
+.legend2{display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0 0;font-size:.8rem;color:var(--muted)}
+.legend2 span{display:inline-flex;align-items:center;gap:6px}
+.legend2 i{display:inline-block;width:10px;height:10px;border-radius:3px}

@@ -253,15 +253,27 @@ function renderMonth() {
   const overN = s.spendEnv.filter(e => (s.byEnv[e.id] || 0) > (+e.limit || 0)).length;
   const unalloc = s.salary - s.budget - s.saveTarget;
   const paceTxt = cur === THIS ? `Day ${new Date().getDate()} of ${daysIn(cur)} · ${Math.round(frac * 100)}% of the month gone, ${Math.round(s.budget ? s.spent / s.budget * 100 : 0)}% of the budget spent` : cur < THIS ? 'Month closed' : 'Upcoming month';
+  // Four plain tiles: salary → budgeted / unbudgeted → how much of the budget is used.
+  const budgeted = s.budget + s.saveTarget, used = s.total, usedPct = budgeted ? Math.round(used / budgeted * 100) : 0;
+  const sal = Math.max(s.salary, budgeted, used, 1);
+  const seg = v => Math.max(0, v) / sal * 100;
+  const usedW = seg(Math.min(used, budgeted)), restW = seg(budgeted - Math.min(used, budgeted)), freeW = seg(unalloc);
   let html = approvalsHTML() + `<section class="summary">
-    <div class="left"><span class="label">Left to spend</span><span class="num ${left < 0 ? 'neg' : ''}">${fmt(left)}</span><span class="sub">${fmt(s.spent)} spent of ${fmt(s.budget)} budgeted for spending</span></div>
-    <div><span class="meter ${s.spent > s.budget ? 'over' : ''}"><i style="width:${pct}%"></i>${frac > 0 && frac < 1 ? `<b class="pace" style="left:calc(${frac * 100}% - 1px)" title="Where spending would be at an even pace"></b>` : ''}</span>
-    <p class="pacenote">${paceTxt}</p></div>
+    <div class="stiles">
+      <div class="stile"><span class="label">Total salary</span><b>${fmt(s.salary)}</b><small>${label(cur, true)}</small></div>
+      <div class="stile"><span class="label">Budgeted</span><b>${fmt(budgeted)}</b><small>Spending ${fmt(s.budget)} · Saving ${fmt(s.saveTarget)}</small></div>
+      <div class="stile ${unalloc < 0 ? 'bad' : ''}"><span class="label">${unalloc < 0 ? 'Over-budgeted' : 'Unbudgeted'}</span><b>${fmt(Math.abs(unalloc))}</b><small>${unalloc < 0 ? 'Budget is more than the salary' : (s.salary ? Math.round(unalloc / s.salary * 100) + '% of salary, not in any envelope' : 'Not in any envelope')}</small></div>
+      <div class="stile"><span class="label">Used from budget</span><b>${fmt(used)}</b><small>${usedPct}% used · ${fmt(Math.max(0, budgeted - used))} left</small></div>
+    </div>
+    <div>
+      <span class="splitbar" role="img" aria-label="Salary split: used ${fmt(used)}, still in envelopes ${fmt(Math.max(0, budgeted - used))}, unbudgeted ${fmt(Math.max(0, unalloc))}">
+        <i class="u" style="width:${usedW}%"></i><i class="r" style="width:${restW}%"></i><i class="f" style="width:${freeW}%"></i>
+      </span>
+      <p class="legend2"><span><i class="u"></i>Used ${fmt(used)}</span><span><i class="r"></i>Still in envelopes ${fmt(Math.max(0, budgeted - used))}</span><span><i class="f"></i>Unbudgeted ${fmt(Math.max(0, unalloc))}</span></p>
+      <p class="pacenote">Spending: ${fmt(s.spent)} of ${fmt(s.budget)} · Saved &amp; invested: ${fmt(s.saved)} of ${fmt(s.saveTarget)}</p>
+      <p class="pacenote">${paceTxt}</p>
+    </div>
     <dl class="facts">
-      <div><dt>Salary</dt><dd>${fmt(s.salary)}</dd></div>
-      <div><dt>Saved &amp; invested</dt><dd class="pos">${fmt(s.saved)} <small>of ${fmt(s.saveTarget)}</small></dd></div>
-      <div><dt>Not allocated</dt><dd class="${unalloc < 0 ? 'neg' : ''}">${fmt(unalloc)}</dd></div>
-      <div><dt>Salary left now</dt><dd class="${s.salary - s.total < 0 ? 'neg' : ''}">${fmt(s.salary - s.total)}</dd></div>
       <div><dt>Envelopes over limit</dt><dd class="${overN ? 'neg' : ''}">${overN} of ${s.spendEnv.length}</dd></div>
       <div><dt>Emergency overrides</dt><dd>${overridesUsed(cur)} of ${rules().overridesPerMonth}</dd></div>
     </dl>
