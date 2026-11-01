@@ -420,11 +420,13 @@ function closeSheets() { stopScan(); $('#backdrop').hidden = true; for (const id
 function openAdd(envId) {
   const s = stats(cur); if (!s.plan) return;
   addEnv = envId || (s.env.some(e => e.id === addEnv) ? addEnv : s.env[0] && s.env[0].id);
-  $('#addTitle').textContent = 'Add a spend · ' + label(cur, true);
   const N = daysIn(cur), t = todayISO(), d = $('#add-date');
   d.min = cur + '-01'; d.max = cur + '-' + pad(N);
   d.value = t.startsWith(cur) ? t : (cur < THIS ? cur + '-' + pad(N) : cur + '-01');
   $('#add-amount').value = ''; $('#add-note').value = ''; $('#add-err').hidden = true;
+  // Opened from an envelope tile: show just that envelope. From "+ Log spend": show the list.
+  $('#f-add-envs').hidden = !!envId;
+  $('#add-pay').hidden = cur !== THIS;
   renderPick(s); openSheet('addSheet'); setTimeout(() => $('#add-amount').focus(), 60);
 }
 function renderPick(s) {
@@ -432,8 +434,31 @@ function renderPick(s) {
     const left = (+e.limit || 0) - (s.byEnv[e.id] || 0);
     return `<button type="button" class="${e.id === addEnv ? 'on' : ''}" data-pick="${esc(e.id)}" aria-pressed="${e.id === addEnv}">${esc(e.name)}<small>${left < 0 ? '−' + fmt(-left) : fmt(left)}</small></button>`;
   }).join('');
+  renderAddSummary();
+}
+function renderAddSummary() {
+  const s = stats(cur), e = s.env.find(x => x.id === addEnv);
+  if (!e) { $('#add-env-name').textContent = 'Pick an envelope'; $('#add-spent').textContent = '—'; $('#add-left').textContent = '—'; $('#add-after').hidden = true; return; }
+  const lim = +e.limit || 0, sp = s.byEnv[e.id] || 0, left = lim - sp, amt = parseFloat($('#add-amount').value) || 0;
+  $('#add-env-name').textContent = `${e.name} (${fmt(lim)})`;
+  $('#add-spent').textContent = fmt(sp);
+  const l = $('#add-left'); l.textContent = left < 0 ? '−' + fmt(-left) : fmt(left); l.classList.toggle('neg', left < 0);
+  const after = left - amt, a = $('#add-after');
+  a.hidden = !(amt > 0);
+  a.className = 'after' + (after < 0 ? ' neg' : '');
+  a.textContent = after < 0 ? `After this: ${fmt(-after)} over the limit` : `After this: ${fmt(after)} left`;
 }
 $('#add-envs').addEventListener('click', ev => { const b = ev.target.closest('[data-pick]'); if (!b) return; addEnv = b.dataset.pick; renderPick(stats(cur)); });
+$('#add-amount').addEventListener('input', renderAddSummary);
+$('#add-change').addEventListener('click', () => { $('#f-add-envs').hidden = !$('#f-add-envs').hidden; });
+$('#add-pay').addEventListener('click', () => {
+  const amt = parseFloat($('#add-amount').value), err = $('#add-err');
+  const e = stats(cur).env.find(x => x.id === addEnv);
+  if (!(amt > 0)) { err.textContent = 'Enter the amount to pay.'; err.hidden = false; return; }
+  if (!e) { err.textContent = 'Pick an envelope.'; err.hidden = false; return; }
+  const preset = { envId: e.id, amount: amt, note: $('#add-note').value.trim() };
+  closeSheets(); openPay(preset);
+});
 $('#add-save').addEventListener('click', () => {
   const amt = parseFloat($('#add-amount').value), date = $('#add-date').value, err = $('#add-err');
   const s = stats(cur), e = s.env.find(x => x.id === addEnv);
@@ -561,10 +586,14 @@ function parseUPI(text) {
 }
 const payeeKey = pa => pa.toLowerCase().replace(/[^a-z0-9._@-]/g, '_');
 
-function openPay() {
+let payPreset = null;
+function openPay(preset) {
   if (!months[THIS]) { cur = THIS; render(); toast('Set up this month’s envelopes first.'); return; }
   cur = THIS; render();
+  payPreset = preset && preset.envId ? preset : null;
   pay = null; $('#pay-vpa').value = ''; $('#pay-pn').value = ''; msg($('#scanMsg'), '');
+  const e = payPreset && stats(cur).env.find(x => x.id === payPreset.envId);
+  $('#scanTitle').textContent = e ? `Pay ${fmt(payPreset.amount)} from ${e.name}` : 'Scan & Pay';
   showPayStep('scan'); openSheet('paySheet'); startScan();
 }
 function showPayStep(step) { $('#pay-scan').hidden = step !== 'scan'; $('#pay-details').hidden = step !== 'details'; }
@@ -629,6 +658,13 @@ function gotPayee(p) {
   $('#payVpa').textContent = p.pn ? p.pa : '';
   const a = $('#pay-amount'); a.value = p.am || ''; a.readOnly = pay.fixedAmount;
   $('#pay-note').value = ''; $('#pay-reason').value = '';
+  if (payPreset) {
+    // Came from an envelope: keep that envelope, and the amount unless the QR fixes its own.
+    pay.envId = payPreset.envId; pay.picked = true;
+    if (!pay.fixedAmount) a.value = payPreset.amount;
+    $('#pay-note').value = payPreset.note || '';
+    if (pay.fixedAmount && Math.abs(p.am - payPreset.amount) > 0.009) toast(`This QR asks for ${fmt(p.am)}, not ${fmt(payPreset.amount)}.`);
+  }
   showPayStep('details'); renderPay();
   if (!pay.fixedAmount) setTimeout(() => a.focus(), 60);
 }

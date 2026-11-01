@@ -108,13 +108,24 @@
 <section id="addSheet" class="sheet" hidden aria-label="Add a spend">
   <div class="sheet-in">
     <div class="grab"></div>
-    <h2 id="addTitle">Add a spend</h2>
-    <div class="field"><label for="add-amount">Amount (₹)</label><input id="add-amount" class="amount" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
-    <div class="field"><label>Envelope</label><div id="add-envs" class="envpick"></div></div>
-    <div class="field"><label for="add-note">What was it for? (optional)</label><input id="add-note" type="text" maxlength="80" placeholder="e.g. Big Basket order"></div>
-    <div class="field"><label for="add-date">Date</label><input id="add-date" type="date"></div>
+    <div class="picked">
+      <div class="picked-top"><h2 id="add-env-name">Envelope</h2><button type="button" id="add-change" class="link">Change</button></div>
+      <div class="picked-stats">
+        <div><span>Already spent</span><b id="add-spent">₹0</b></div>
+        <div><span>Left</span><b id="add-left">₹0</b></div>
+      </div>
+    </div>
+    <div class="field" id="f-add-envs"><label>Envelope</label><div id="add-envs" class="envpick"></div></div>
+    <div class="field"><label for="add-amount">Amount to spend now (₹)</label><input id="add-amount" class="amount" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
+    <p id="add-after" class="after" hidden></p>
+    <div class="field"><label for="add-note">What is it for? (optional)</label><input id="add-note" type="text" maxlength="80" placeholder="e.g. Big Basket order"></div>
     <p id="add-err" class="err" hidden></p>
-    <div class="row"><button id="add-save" class="btn primary">Save spend</button><button class="btn ghost" data-close>Cancel</button></div>
+    <div class="row">
+      <button id="add-pay" class="btn primary">Proceed to pay</button>
+      <button id="add-save" class="btn">Already paid, just log it</button>
+    </div>
+    <details class="more"><summary>Different date</summary><div class="field"><label for="add-date">Date</label><input id="add-date" type="date"></div></details>
+    <button class="btn ghost small" data-close style="align-self:flex-start">Cancel</button>
   </div>
 </section>
 
@@ -137,7 +148,7 @@
   <div class="sheet-in">
     <div class="grab"></div>
     <div id="pay-scan" class="paystep">
-      <h2>Scan &amp; Pay</h2>
+      <h2 id="scanTitle">Scan &amp; Pay</h2>
       <div id="scanBox" class="scanbox"><video id="scanVideo" playsinline muted></video><div class="scanframe" aria-hidden="true"></div></div>
       <p id="scanMsg" class="err" hidden></p>
       <label class="btn filebtn" for="qrFile">Upload a photo of the QR</label>
