@@ -286,14 +286,16 @@ function renderMonth() {
     for (const e of s.saveEnv) {
       const sv = s.byEnv[e.id] || 0, tgt = +e.limit || 0, w = tgt ? Math.min(100, sv / tgt * 100) : (sv ? 100 : 0);
       const ft = fundTotal(e), mkt = MARKET_RE.test(e.name), verb = mkt ? 'invested' : 'saved', done = tgt > 0 && sv >= tgt;
-      html += `<button class="env save${done ? ' done' : ''}" style="--c:${envColor(s, e)}" data-act="addto" data-env="${esc(e.id)}">
-        <span class="name">${esc(e.name)} <span class="cap">(${fmt(tgt)})</span></span>
+      const plan = planHTML(e), due = Math.max(0, tgt - sv);
+      // Top block = this month only. A fixed-term plan adds a separate "Whole plan" block below.
+      html += `<button class="env save${done ? ' done' : ''}${plan ? ' wide' : ''}" style="--c:${envColor(s, e)}" data-act="addto" data-env="${esc(e.id)}">
+        <span class="name">${esc(e.name)} <span class="cap">(${fmt(tgt)} a month)</span></span>
+        <span class="sublabel">${label(cur, true)}</span>
         <span class="of">${fmt(sv)} ${verb} out of ${fmt(tgt)}</span>
-        <span class="bal"><small>Still to ${mkt ? 'invest' : 'save'}:</small> ${fmt(Math.max(0, tgt - sv))}</span>
+        <span class="bal"><small>${done ? 'This month:' : 'Due this month:'}</small> ${done ? 'Paid' + (sv > tgt ? ' (+' + fmt(sv - tgt) + ' extra)' : '') : fmt(due)}</span>
         <span class="meter"><i style="width:${w}%"></i></span>
         <span class="total"><small>${mkt ? 'Invested to date (not market value)' : 'Saved to date'}</small><b>${fmt(ft.total)}</b></span>
-        ${planHTML(e)}
-        ${done ? `<span class="pill done">${sv > tgt ? 'Target reached +' + fmt(sv - tgt) : 'Target reached'}</span>` : ''}
+        ${plan}
       </button>`;
     }
     html += `</div></section>`;
@@ -1027,8 +1029,9 @@ const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', {
 function planHTML(e) {
   const p = planInfo(e); if (!p) return '';
   let h = `<span class="plan">
+    <span class="sublabel">Whole plan</span>
     <span>Instalments <b>${p.paid} of ${p.n}</b> paid · ${p.left} left</span>
-    <span>Still to invest <b>${fmt(p.toInvest)}</b></span>`;
+    <span>Still to invest until the end <b>${fmt(p.toInvest)}</b></span>`;
   if (p.M > 0) h += `<span>You get <b>${fmt(p.M)}</b>${p.due ? ' on ' + fmtDate(p.due) : ''}</span>`;
   if (p.irr != null) {
     const better = p.irr >= p.fdEff;
