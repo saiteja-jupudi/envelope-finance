@@ -119,13 +119,15 @@
     <div class="field"><label for="add-amount">Amount to spend now (₹)</label><input id="add-amount" class="amount" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
     <p id="add-after" class="after" hidden></p>
     <div class="field"><label for="add-note">What is it for? (optional)</label><input id="add-note" type="text" maxlength="80" placeholder="e.g. Big Basket order"></div>
-    <p id="add-err" class="err" hidden></p>
-    <div class="row">
-      <button id="add-pay" class="btn primary">Proceed to pay</button>
-      <button id="add-save" class="btn">Already paid, just log it</button>
-    </div>
     <details class="more"><summary>Different date</summary><div class="field"><label for="add-date">Date</label><input id="add-date" type="date"></div></details>
-    <button class="btn ghost small" data-close style="align-self:flex-start">Cancel</button>
+    <div class="sheet-actions" id="add-actions">
+      <p id="add-err" class="err" hidden></p>
+      <div class="row">
+        <button id="add-pay" class="btn primary">Proceed to pay</button>
+        <button id="add-save" class="btn">Already paid, just log it</button>
+      </div>
+      <button class="btn ghost small" data-close style="align-self:flex-start">Cancel</button>
+    </div>
   </div>
 </section>
 
@@ -161,13 +163,23 @@
     <div id="pay-details" class="paystep" hidden>
       <div class="payee"><span class="label">Paying</span><h2 id="payTo"></h2><span id="payVpa" class="mono quiet"></span></div>
       <div class="field"><label for="pay-amount">Amount (₹)</label><input id="pay-amount" class="amount" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
-      <div class="field"><label>Envelope</label><p id="pay-why" class="quiet"></p><div id="pay-envs" class="envpick"></div></div>
-      <div class="field"><label for="pay-note">What was it for? (optional)</label><input id="pay-note" type="text" maxlength="80" placeholder="e.g. Weekly vegetables"></div>
+      <div class="field">
+        <label>Envelope</label>
+        <div id="pay-chosen" class="chosen" hidden>
+          <div class="chosen-txt"><b id="pay-chosen-name"></b><span id="pay-chosen-left"></span><small id="pay-why" class="quiet"></small></div>
+          <button type="button" id="pay-change" class="link">Change</button>
+        </div>
+        <p id="pay-pickhint" class="quiet" hidden>Pick the envelope this payment comes from.</p>
+        <div id="pay-envs" class="envpick"></div>
+      </div>
       <div id="pay-warn" class="note" hidden></div>
       <div class="field" id="f-pay-reason" hidden><label for="pay-reason">Reason for the emergency override (required)</label><input id="pay-reason" type="text" maxlength="120" placeholder="e.g. Pharmacy for fever medicine"></div>
       <button id="pay-raise" class="btn small" hidden style="align-self:flex-start">Edit envelopes</button>
-      <div id="pay-apps" class="payapps"></div>
-      <div class="row"><button id="pay-back" class="btn ghost small">Scan again</button><button class="btn ghost small" data-close>Cancel</button></div>
+      <div class="field"><label for="pay-note">What is it for? (optional)</label><input id="pay-note" type="text" maxlength="80" placeholder="e.g. Weekly vegetables"></div>
+      <div class="sheet-actions" id="pay-actions">
+        <div id="pay-apps" class="payapps"></div>
+        <div class="row"><button id="pay-back" class="btn ghost small">Scan again</button><button class="btn ghost small" data-close>Cancel</button></div>
+      </div>
     </div>
   </div>
 </section>

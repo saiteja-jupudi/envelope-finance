@@ -452,7 +452,13 @@ function renderAddSummary() {
   a.className = 'after' + (after < 0 ? ' neg' : '');
   a.textContent = after < 0 ? `After this: ${fmt(-after)} over the limit` : `After this: ${fmt(after)} left`;
 }
-$('#add-envs').addEventListener('click', ev => { const b = ev.target.closest('[data-pick]'); if (!b) return; addEnv = addEnv === b.dataset.pick ? null : b.dataset.pick; renderPick(stats(cur)); });
+$('#add-envs').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-pick]'); if (!b) return;
+  const deselect = addEnv === b.dataset.pick;
+  addEnv = deselect ? null : b.dataset.pick;
+  renderPick(stats(cur));
+  if (!deselect) { $('#f-add-envs').hidden = true; setTimeout(() => $('#add-amount').focus(), 60); }
+});
 $('#add-amount').addEventListener('input', renderAddSummary);
 $('#add-change').addEventListener('click', () => { $('#f-add-envs').hidden = !$('#f-add-envs').hidden; });
 $('#add-pay').addEventListener('click', () => {
@@ -657,7 +663,7 @@ $('#pay-manual').addEventListener('click', () => {
 });
 
 function gotPayee(p) {
-  pay = { ...p, fixedAmount: p.am > 0, envId: null, picked: false };
+  pay = { ...p, fixedAmount: p.am > 0, envId: null, picked: false, showList: false };
   $('#payTo').textContent = p.pn || p.pa;
   $('#payVpa').textContent = p.pn ? p.pa : '';
   const a = $('#pay-amount'); a.value = p.am || ''; a.readOnly = pay.fixedAmount;
@@ -687,8 +693,18 @@ function renderPay() {
   const s = stats(cur), r = rules(), amt = parseFloat($('#pay-amount').value) || 0;
   let why = '';
   if (!pay.picked) { const a = autoEnvelope(amt); pay.envId = a ? a.id : null; why = a ? a.why : ''; }
-  $('#pay-why').textContent = pay.envId ? (pay.picked ? '' : why) : 'Pick the envelope this payment comes from.';
-  $('#pay-envs').innerHTML = envTiles(s, pay.envId);
+  // With an envelope chosen, collapse the list to one line; "Change" (or no choice) shows the tiles.
+  const chosen = s.env.find(x => x.id === pay.envId), showList = !chosen || pay.showList;
+  $('#pay-chosen').hidden = !chosen || pay.showList;
+  $('#pay-pickhint').hidden = !!chosen;
+  $('#pay-envs').hidden = !showList;
+  if (chosen) {
+    const left = (+chosen.limit || 0) - (s.byEnv[chosen.id] || 0);
+    $('#pay-chosen-name').textContent = chosen.name;
+    const l = $('#pay-chosen-left'); l.textContent = left < 0 ? `${fmt(-left)} over` : `${fmt(left)} left`; l.classList.toggle('neg', left < 0);
+    $('#pay-why').textContent = pay.picked ? '' : why;
+  }
+  if (showList) $('#pay-envs').innerHTML = envTiles(s, pay.envId);
 
   const e = s.env.find(x => x.id === pay.envId), warn = $('#pay-warn');
   pay.needOverride = false; pay.blocked = false; warn.hidden = true; $('#f-pay-reason').hidden = true; $('#pay-raise').hidden = true;
@@ -733,9 +749,14 @@ function renderPayApps(ready, amt) {
 
 $('#pay-envs').addEventListener('click', ev => {
   const b = ev.target.closest('[data-pick]'); if (!b) return;
-  pay.envId = pay.envId === b.dataset.pick ? null : b.dataset.pick; // tap the selected one again to deselect
-  pay.picked = true; renderPay();
+  const deselect = pay.envId === b.dataset.pick; // tap the selected one again to deselect
+  pay.envId = deselect ? null : b.dataset.pick;
+  pay.picked = true; pay.showList = deselect; renderPay();
+  if (!deselect) revealActions('#pay-actions');
 });
+$('#pay-change').addEventListener('click', () => { pay.showList = true; renderPay(); });
+// Bring the pay buttons into view after choosing, without the user hunting for them.
+function revealActions(sel) { setTimeout(() => { const el = $(sel); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 50); }
 $('#pay-amount').addEventListener('input', renderPay);
 $('#pay-reason').addEventListener('input', renderPay);
 $('#pay-back').addEventListener('click', () => { pay = null; showPayStep('scan'); startScan(); });

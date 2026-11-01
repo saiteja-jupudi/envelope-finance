@@ -156,8 +156,17 @@ main{display:flex;flex-direction:column;gap:22px;padding-top:18px}
 .field label{font-size:.82rem;color:var(--muted);font-weight:500}
 input{font:inherit;font-size:16px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:11px 12px;width:100%;min-width:0}
 .amount{font-family:var(--f-mono);font-size:1.8rem;padding:10px 14px}
-/* Envelope picker: a 2-column grid of equal tiles, scrolling inside its own box when long */
-.envpick{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:min(46vh,340px);overflow-y:auto;overscroll-behavior:contain;padding:2px;-webkit-overflow-scrolling:touch}
+/* Envelope picker: a 2-column grid of equal tiles; it scrolls with the sheet, never on its own */
+.envpick{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+/* The chosen envelope, collapsed to one line */
+.chosen{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:12px 14px}
+.chosen-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.chosen-txt b{font-size:1rem;overflow-wrap:anywhere}
+.chosen-txt span{font-family:var(--f-mono);font-size:.88rem;color:var(--accent)}
+.chosen-txt span.neg{color:var(--over)}
+.chosen-txt small:empty{display:none}
+/* Action bar pinned to the bottom of a sheet, so Pay is always within reach */
+.sheet-actions{position:sticky;bottom:calc(-1 * (env(safe-area-inset-bottom,0px) + 18px));z-index:2;background:var(--card);border-top:1px solid var(--line);margin:0 calc(-1 * max(16px,env(safe-area-inset-left,0px))) calc(-1 * (env(safe-area-inset-bottom,0px) + 18px));padding:12px max(16px,env(safe-area-inset-left,0px)) calc(env(safe-area-inset-bottom,0px) + 14px);display:flex;flex-direction:column;gap:10px}
 .envtile{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-height:64px;padding:10px 12px;text-align:left;border:1px solid var(--line);background:var(--paper);border-radius:12px;min-width:0}
 .envtile .n{font-weight:600;font-size:.92rem;line-height:1.25;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .envtile .b{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:.8rem;color:var(--muted)}
