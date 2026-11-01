@@ -469,10 +469,9 @@ function openAdd(envId) {
   const N = daysIn(cur), t = todayISO(), d = $('#add-date');
   d.min = cur + '-01'; d.max = cur + '-' + pad(N);
   d.value = t.startsWith(cur) ? t : (cur < THIS ? cur + '-' + pad(N) : cur + '-01');
-  $('#add-amount').value = ''; $('#add-note').value = ''; $('#add-err').hidden = true;
+  $('#add-amount').value = ''; $('#add-note').value = ''; $('#add-err').hidden = true; $('#add-past').checked = false;
   // Opened from an envelope tile: show just that envelope. From "+ Log spend": show the list.
   $('#f-add-envs').hidden = !!envId;
-  $('#add-pay').hidden = cur !== THIS;
   renderPick(s); openSheet('addSheet'); setTimeout(() => $('#add-amount').focus(), 60);
 }
 // Each envelope gets one of the logo's colours, by its position in the month's plan.
@@ -493,14 +492,26 @@ function renderPick(s) {
 }
 function renderAddSummary() {
   const s = stats(cur), e = s.env.find(x => x.id === addEnv);
-  if (!e) { $('#add-env-name').textContent = 'Pick an envelope'; $('#add-spent').textContent = '—'; $('#add-left').textContent = '—'; $('#add-after').hidden = true; return; }
+  if (!e) { $('#add-env-name').textContent = 'Pick an envelope'; $('#add-spent').textContent = '—'; $('#add-left').textContent = '—'; $('#add-after').hidden = true; $('#f-add-past').hidden = true; $('#add-pay').hidden = cur !== THIS; $('#add-save').textContent = 'Already paid, just log it'; $('#add-date-more').hidden = false; return; }
   const lim = +e.limit || 0, sp = s.byEnv[e.id] || 0, left = lim - sp, amt = parseFloat($('#add-amount').value) || 0, save = isSave(e);
+  // Savings envelopes can record money saved before this month; that never touches this month's salary.
+  $('#f-add-past').hidden = !save;
+  const past = save && $('#add-past').checked;
+  $('#add-pay').hidden = past || cur !== THIS;
+  $('#add-save').textContent = past ? 'Add to saved to date' : 'Already paid, just log it';
+  $('#add-date-more').hidden = past;
+  if (past) {
+    $('#add-amount-l').textContent = 'Amount saved before this month (₹)';
+    const a = $('#add-after'); a.hidden = !(amt > 0); a.className = 'after';
+    a.textContent = `Saved to date becomes ${fmt(fundTotal(e).total + amt)}. This month’s salary isn’t affected.`;
+  }
   $('#add-env-name').textContent = `${e.name} (${fmt(lim)})`;
   $('#add-spent-l').textContent = save ? 'Saved this month' : 'Already spent';
   $('#add-left-l').textContent = save ? 'Still to save' : 'Left';
-  $('#add-amount-l').textContent = save ? 'Amount to save / invest now (₹)' : 'Amount to spend now (₹)';
+  if (!past) $('#add-amount-l').textContent = save ? 'Amount to save / invest now (₹)' : 'Amount to spend now (₹)';
   $('#add-spent').textContent = fmt(sp);
   const l = $('#add-left'); l.textContent = save ? fmt(Math.max(0, left)) : (left < 0 ? '−' + fmt(-left) : fmt(left)); l.classList.toggle('neg', !save && left < 0);
+  if (past) return;
   const after = left - amt, a = $('#add-after');
   a.hidden = !(amt > 0);
   if (save) {
@@ -519,6 +530,7 @@ $('#add-envs').addEventListener('click', ev => {
   if (!deselect) { $('#f-add-envs').hidden = true; setTimeout(() => $('#add-amount').focus(), 60); }
 });
 $('#add-amount').addEventListener('input', renderAddSummary);
+$('#add-past').addEventListener('change', renderAddSummary);
 $('#add-change').addEventListener('click', () => { $('#f-add-envs').hidden = !$('#f-add-envs').hidden; });
 $('#add-pay').addEventListener('click', () => {
   const amt = parseFloat($('#add-amount').value), err = $('#add-err');
@@ -534,6 +546,13 @@ $('#add-save').addEventListener('click', () => {
   const fail = m => { err.textContent = m; err.hidden = false; };
   if (!(amt > 0)) return fail('Enter an amount above zero.');
   if (!e) return fail('Pick an envelope.');
+  if (isSave(e) && $('#add-past').checked) {
+    // Past savings go into the envelope's opening balance, not into this month.
+    const ft = fundTotal(e);
+    updateDoc(hhRef(), { ['funds.' + e.id]: { opening: Math.round(ft.opening + amt), name: e.name, updatedAt: Date.now(), by: me.uid } })
+      .catch(x => { console.error(x); toast('That could not be saved. Try again.'); });
+    closeSheets(); toast(`${fmt(amt)} added to ${e.name}’s saved-to-date total. This month is unchanged.`); return;
+  }
   if (!date || !date.startsWith(cur)) return fail('Pick a date in ' + label(cur) + '.');
   // Not awaited: Firestore applies the write locally at once and syncs when online.
   setDoc(doc(collection(fs, 'households', hid, 'txns')), { month: cur, envelopeId: e.id, envelopeName: e.name, amount: Math.round(amt * 100) / 100, note: $('#add-note').value.trim(), date, by: me.uid, at: Date.now() })

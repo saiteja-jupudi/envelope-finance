@@ -257,3 +257,6 @@ td.o{color:var(--over);background:var(--over-soft)}
 .env .total b{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-weight:500;font-size:1rem;color:var(--green)}
 .env.save.done{border-color:var(--green)}
 .alloc b.pos{color:var(--green)}
+
+.check{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--paper);cursor:pointer}
+.check input{width:20px;height:20px;margin-top:2px;flex:none;accent-color:var(--green)}
