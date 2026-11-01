@@ -824,4 +824,17 @@ let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() 
 })();
 
 updateOnline();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  // Reload once when a new version takes over, so updates appear without reopening twice.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    const busy = ['addSheet', 'planSheet', 'paySheet', 'confirmSheet'].some(id => !$('#' + id).hidden);
+    if (busy) return;
+    reloaded = true; location.reload();
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+    .then(reg => { document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); }); })
+    .catch(() => {});
+}
