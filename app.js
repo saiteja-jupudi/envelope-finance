@@ -282,7 +282,7 @@ function renderMonth() {
   html += `</div></section>`;
 
   if (s.saveEnv.length) {
-    html += `<section><div class="sechead"><h2>Savings &amp; investments</h2><button class="link" data-act="funds">Opening balances</button></div><div class="envs">`;
+    html += `<section><div class="sechead"><h2>Savings &amp; investments</h2><button class="link" data-act="funds">Plans &amp; balances</button></div><div class="envs">`;
     for (const e of s.saveEnv) {
       const sv = s.byEnv[e.id] || 0, tgt = +e.limit || 0, w = tgt ? Math.min(100, sv / tgt * 100) : (sv ? 100 : 0);
       const ft = fundTotal(e), mkt = MARKET_RE.test(e.name), verb = mkt ? 'invested' : 'saved', done = tgt > 0 && sv >= tgt;
@@ -292,6 +292,7 @@ function renderMonth() {
         <span class="bal"><small>Still to ${mkt ? 'invest' : 'save'}:</small> ${fmt(Math.max(0, tgt - sv))}</span>
         <span class="meter"><i style="width:${w}%"></i></span>
         <span class="total"><small>${mkt ? 'Invested to date (not market value)' : 'Saved to date'}</small><b>${fmt(ft.total)}</b></span>
+        ${planHTML(e)}
         ${done ? `<span class="pill done">${sv > tgt ? 'Target reached +' + fmt(sv - tgt) : 'Target reached'}</span>` : ''}
       </button>`;
     }
@@ -345,7 +346,8 @@ function applyTxnChange(batch, txId, action, after) {
   else if (action === 'toOpening') {
     const ft = fundTotal({ id: after.envelopeId, name: after.envelopeName || '' });
     batch.delete(ref);
-    batch.update(hhRef(), { ['funds.' + after.envelopeId]: { opening: Math.round(ft.opening + after.amount), name: after.envelopeName || '', updatedAt: Date.now(), by: me.uid } });
+    const k = 'funds.' + after.envelopeId + '.';
+    batch.update(hhRef(), { [k + 'opening']: Math.round(ft.opening + after.amount), [k + 'name']: after.envelopeName || '', [k + 'updatedAt']: Date.now(), [k + 'by']: me.uid });
   } else batch.update(ref, { ...after, editedAt: Date.now(), editedBy: me.uid });
   return true;
 }
@@ -581,7 +583,8 @@ $('#add-save').addEventListener('click', () => {
   if (isSave(e) && $('#add-past').checked) {
     // Past savings go into the envelope's opening balance, not into this month.
     const ft = fundTotal(e);
-    updateDoc(hhRef(), { ['funds.' + e.id]: { opening: Math.round(ft.opening + amt), name: e.name, updatedAt: Date.now(), by: me.uid } })
+    const k = 'funds.' + e.id + '.';
+    updateDoc(hhRef(), { [k + 'opening']: Math.round(ft.opening + amt), [k + 'name']: e.name, [k + 'updatedAt']: Date.now(), [k + 'by']: me.uid })
       .catch(x => { console.error(x); toast('That could not be saved. Try again.'); });
     closeSheets(); toast(`${fmt(amt)} added to ${e.name}’s saved-to-date total. This month is unchanged.`); return;
   }
@@ -668,7 +671,7 @@ $('#plan-save').addEventListener('click', () => {
 });
 
 /* ---------- household rules ---------- */
-const DEFAULT_RULES = { miscThreshold: 500, overridesPerMonth: 2, overrideCap: 5000 };
+const DEFAULT_RULES = { miscThreshold: 500, overridesPerMonth: 2, overrideCap: 5000, fdRate: 6.25 };
 const rules = () => ({ ...DEFAULT_RULES, ...((household && household.rules) || {}) });
 const RULE_NAMES = { overridesPerMonth: 'Emergency overrides per month', overrideCap: 'Largest single override' };
 function fmtRule(c, v) { return c.kind === 'rule' && c.key === 'overridesPerMonth' ? String(v) : fmt(v); }
@@ -676,7 +679,7 @@ const overridesUsed = k => txns.filter(x => x.month === k && x.override).length;
 
 function fillRules() {
   const r = rules();
-  $('#r-misc').value = r.miscThreshold; $('#r-ovr').value = r.overridesPerMonth; $('#r-cap').value = r.overrideCap;
+  $('#r-misc').value = r.miscThreshold; $('#r-ovr').value = r.overridesPerMonth; $('#r-cap').value = r.overrideCap; $('#r-fd').value = r.fdRate;
   $('#rulesNote').textContent = partnerIds().length
     ? `Raising the number or size of overrides needs ${partnerLabel()}’s approval. Lowering them applies at once.`
     : 'Overrides let a payment go over an envelope’s limit in an emergency, with a reason.';
@@ -684,9 +687,10 @@ function fillRules() {
 }
 $('#saveRules').addEventListener('click', () => {
   const cur0 = rules(), m = $('#rulesMsg');
-  const next = { miscThreshold: Math.round(+$('#r-misc').value), overridesPerMonth: Math.round(+$('#r-ovr').value), overrideCap: Math.round(+$('#r-cap').value) };
+  const next = { miscThreshold: Math.round(+$('#r-misc').value), overridesPerMonth: Math.round(+$('#r-ovr').value), overrideCap: Math.round(+$('#r-cap').value), fdRate: Math.round(+$('#r-fd').value * 100) / 100 };
+  if (!(next.fdRate > 0 && next.fdRate < 20)) return msg(m, 'Enter an FD rate between 0 and 20%.');
   if (!(next.miscThreshold >= 0) || !(next.overridesPerMonth >= 0 && next.overridesPerMonth <= 10) || !(next.overrideCap >= 0)) return msg(m, 'Use whole numbers. Overrides can be 0 to 10 a month.');
-  const direct = { 'rules.miscThreshold': next.miscThreshold }, changes = [];
+  const direct = { 'rules.miscThreshold': next.miscThreshold, 'rules.fdRate': next.fdRate }, changes = [];
   for (const k of ['overridesPerMonth', 'overrideCap']) {
     if (next[k] > cur0[k] && partnerIds().length) changes.push({ kind: 'rule', key: k, name: RULE_NAMES[k], from: cur0[k], to: next[k] });
     else direct['rules.' + k] = next[k];
@@ -992,28 +996,101 @@ $('#ed-del').addEventListener('click', () => {
   closeSheets(); toast('Entry deleted');
 });
 
-/* ---------- savings opening balances ---------- */
-// One-time amounts already saved before using the app (e.g. chit instalments paid so far).
+/* ---------- fixed-term plans (chit funds, RDs) ---------- */
+// x per month for n months, then a payout M on the due date.
+// Return is the annual rate at which those instalments grow to M (XIRR for evenly spaced flows):
+// solve  Σ_{m=1..n} x·(1+r)^m = M  for the monthly r, then annualise.
+function planIrr(x, n, M) {
+  const fv = r => { let s = 0; for (let m = 1; m <= n; m++) s += x * Math.pow(1 + r, m); return s; };
+  let lo = -0.5, hi = 1;
+  for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; if (fv(mid) > M) hi = mid; else lo = mid; }
+  return Math.pow(1 + (lo + hi) / 2, 12) - 1;
+}
+// What the same instalments would grow to in a bank deposit quoting `pct` % a year, compounded quarterly.
+function depositValue(x, n, pct) {
+  const i = Math.pow(1 + pct / 400, 4 / 12) - 1;
+  let s = 0; for (let m = 1; m <= n; m++) s += x * Math.pow(1 + i, m); return s;
+}
+const fdEffective = pct => Math.pow(1 + pct / 400, 4) - 1;
+function planInfo(e) {
+  const f = household && household.funds && household.funds[e.id], p = f && f.plan;
+  if (!p || !(+p.inst > 0) || !(+p.n > 0)) return null;
+  const n = Math.round(+p.n), x = +p.inst, M = +p.maturity || 0, name = e.name.trim().toLowerCase();
+  // Instalments paid = those paid before the app + each month a payment was logged into this envelope.
+  const monthsInApp = new Set(txns.filter(t => t.amount > 0 && (t.envelopeId === e.id || (t.envelopeName || '').trim().toLowerCase() === name)).map(t => t.month)).size;
+  const paid = Math.min(n, Math.round(+p.paidBefore || 0) + monthsInApp), left = n - paid;
+  const fd = rules().fdRate;
+  return { n, x, M, paid, left, toInvest: left * x, due: p.due || '', irr: M > 0 ? planIrr(x, n, M) : null, fd, fdEff: fdEffective(fd), fdValue: depositValue(x, n, fd) };
+}
+const pct1 = v => (v * 100).toFixed(1) + '%';
+const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+function planHTML(e) {
+  const p = planInfo(e); if (!p) return '';
+  let h = `<span class="plan">
+    <span>Instalments <b>${p.paid} of ${p.n}</b> paid · ${p.left} left</span>
+    <span>Still to invest <b>${fmt(p.toInvest)}</b></span>`;
+  if (p.M > 0) h += `<span>You get <b>${fmt(p.M)}</b>${p.due ? ' on ' + fmtDate(p.due) : ''}</span>`;
+  if (p.irr != null) {
+    const better = p.irr >= p.fdEff;
+    h += `<span class="ret ${better ? 'good' : 'bad'}">Return ≈ <b>${pct1(p.irr)}</b> a year (XIRR) vs FD ${p.fd}%<br><small>Same instalments in an FD/RD: ≈ ${fmt(p.fdValue)} · ${better ? 'this plan gives ' + fmt(p.M - p.fdValue) + ' more' : 'an FD gives ' + fmt(p.fdValue - p.M) + ' more'}</small></span>`;
+  }
+  return h + '</span>';
+}
+
+/* ---------- savings details: opening balances and fixed-term plans ---------- */
 function openFunds() {
   const s = stats(cur);
   $('#funds-rows').innerHTML = s.saveEnv.map(e => {
-    const ft = fundTotal(e);
-    return `<div class="field"><label for="fo-${esc(e.id)}">${esc(e.name)}: saved before using SpendWise (₹)</label>
-      <input id="fo-${esc(e.id)}" data-fund="${esc(e.id)}" data-name="${esc(e.name)}" type="number" inputmode="decimal" min="0" step="1" value="${ft.opening || ''}" placeholder="0">
-      <small class="quiet">Paid through the app so far: ${fmt(ft.contributed)}</small></div>`;
+    const ft = fundTotal(e), f = (household && household.funds && household.funds[e.id]) || {}, p = f.plan || {}, id = esc(e.id);
+    const v = k => (p[k] != null && p[k] !== '' ? esc(p[k]) : '');
+    return `<fieldset class="fund" data-fund="${id}" data-name="${esc(e.name)}">
+      <legend>${esc(e.name)}</legend>
+      <div class="field"><label for="fo-${id}">Saved before using SpendWise (₹)</label>
+        <input id="fo-${id}" data-k="opening" type="number" inputmode="decimal" min="0" step="1" value="${ft.opening || ''}" placeholder="0">
+        <small class="quiet">Paid through the app so far: ${fmt(ft.contributed)}</small></div>
+      <details class="more"${p.inst ? ' open' : ''}><summary>Fixed-term plan (chit fund, RD)</summary>
+        <div class="grid2">
+          <div class="field"><label for="fi-${id}">Monthly instalment (₹)</label><input id="fi-${id}" data-k="inst" type="number" inputmode="decimal" min="0" step="1" value="${v('inst')}" placeholder="e.g. 10000"></div>
+          <div class="field"><label for="fn-${id}">Total instalments (months)</label><input id="fn-${id}" data-k="n" type="number" inputmode="numeric" min="1" step="1" value="${v('n')}" placeholder="e.g. 25"></div>
+          <div class="field"><label for="fp-${id}">Instalments paid before SpendWise</label><input id="fp-${id}" data-k="paidBefore" type="number" inputmode="numeric" min="0" step="1" value="${v('paidBefore')}" placeholder="e.g. 12"></div>
+          <div class="field"><label for="fm-${id}">Amount you get at the end (₹)</label><input id="fm-${id}" data-k="maturity" type="number" inputmode="decimal" min="0" step="1" value="${v('maturity')}" placeholder="e.g. 300000"></div>
+          <div class="field"><label for="fd-${id}">Due date</label><input id="fd-${id}" data-k="due" type="date" value="${v('due')}"></div>
+        </div>
+        <p class="quiet planprev" id="pv-${id}"></p>
+      </details>
+    </fieldset>`;
   }).join('') || '<p class="quiet">No savings envelopes this month. Mark one as Save in “Edit salary &amp; envelopes” first.</p>';
+  for (const fsEl of document.querySelectorAll('#funds-rows .fund')) previewPlan(fsEl);
   msg($('#funds-msg'), ''); openSheet('fundsSheet');
 }
+function readFund(fsEl) {
+  const val = k => { const i = fsEl.querySelector(`[data-k="${k}"]`); return i ? i.value.trim() : ''; };
+  return { opening: Math.round(+val('opening') || 0), inst: +val('inst') || 0, n: Math.round(+val('n') || 0), paidBefore: Math.round(+val('paidBefore') || 0), maturity: Math.round(+val('maturity') || 0), due: val('due') };
+}
+// Live preview of the return while typing.
+function previewPlan(fsEl) {
+  const f = readFund(fsEl), out = fsEl.querySelector('.planprev'); if (!out) return;
+  if (!(f.inst > 0 && f.n > 0)) { out.textContent = 'Enter the instalment and number of months to see progress and the expected return.'; out.className = 'quiet planprev'; return; }
+  const total = f.inst * f.n;
+  if (!(f.maturity > 0)) { out.textContent = `You’ll pay ${fmt(total)} in total over ${f.n} months.`; out.className = 'quiet planprev'; return; }
+  const irr = planIrr(f.inst, f.n, f.maturity), fd = rules().fdRate, better = irr >= fdEffective(fd);
+  out.textContent = `You pay ${fmt(total)} and get ${fmt(f.maturity)}: return ≈ ${pct1(irr)} a year (XIRR), against an FD at ${fd}%. ${better ? 'Better than the FD.' : 'An FD would do better.'}`;
+  out.className = 'planprev ' + (better ? 'good' : 'bad');
+}
+$('#funds-rows').addEventListener('input', ev => { const fsEl = ev.target.closest('.fund'); if (fsEl) previewPlan(fsEl); });
 $('#funds-save').addEventListener('click', () => {
-  const upd = {};
-  for (const i of document.querySelectorAll('#funds-rows [data-fund]')) {
-    const v = Math.round(+i.value || 0);
-    if (v < 0) return msg($('#funds-msg'), 'Amounts can’t be negative.');
-    upd['funds.' + i.dataset.fund] = { opening: v, name: i.dataset.name, updatedAt: Date.now(), by: me.uid };
+  const upd = {}, err = $('#funds-msg');
+  for (const fsEl of document.querySelectorAll('#funds-rows .fund')) {
+    const f = readFund(fsEl), k = 'funds.' + fsEl.dataset.fund + '.';
+    if ([f.opening, f.inst, f.n, f.paidBefore, f.maturity].some(v => v < 0)) return msg(err, 'Amounts can’t be negative.');
+    if (f.inst > 0 && !(f.n > 0)) return msg(err, `Enter the total number of instalments for ${fsEl.dataset.name}.`);
+    if (f.n > 0 && f.paidBefore > f.n) return msg(err, `Instalments paid can’t be more than the total for ${fsEl.dataset.name}.`);
+    upd[k + 'opening'] = f.opening; upd[k + 'name'] = fsEl.dataset.name; upd[k + 'updatedAt'] = Date.now(); upd[k + 'by'] = me.uid;
+    upd[k + 'plan'] = f.inst > 0 ? { inst: f.inst, n: f.n, paidBefore: f.paidBefore, maturity: f.maturity, due: f.due } : null;
   }
   if (!Object.keys(upd).length) { closeSheets(); return; }
-  updateDoc(hhRef(), upd).catch(x => { console.error(x); toast('Opening balances could not be saved. Try again.'); });
-  closeSheets(); toast('Opening balances saved');
+  updateDoc(hhRef(), upd).catch(x => { console.error(x); toast('Savings details could not be saved. Try again.'); });
+  closeSheets(); toast('Savings details saved');
 });
 
 /* ---------- account ---------- */

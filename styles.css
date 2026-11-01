@@ -263,3 +263,18 @@ td.o{color:var(--over);background:var(--over-soft)}
 .btn.danger{color:var(--over);border-color:color-mix(in srgb,var(--over) 40%,var(--line))}
 .btn.danger.arm{background:var(--over);color:#fff;border-color:var(--over)}
 select{appearance:auto}
+
+/* Fixed-term savings plans */
+.env .plan{display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--muted);padding-top:6px;border-top:1px dashed var(--line)}
+.env .plan b{font-family:var(--f-mono);font-weight:500;color:var(--ink)}
+.env .plan .ret{margin-top:2px;padding:6px 8px;border-radius:8px;line-height:1.35}
+.env .plan .ret small{font-size:.74rem;opacity:.9}
+.ret.good,.planprev.good{background:color-mix(in srgb,var(--green) 14%,var(--card));color:var(--ink)}
+.ret.good b{color:var(--green)}
+.ret.bad,.planprev.bad{background:var(--warn-soft);color:var(--ink)}
+.ret.bad b{color:var(--warn)}
+.planprev{margin:6px 0 0;padding:8px 10px;border-radius:10px;font-size:.85rem}
+fieldset.fund{border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:0;display:flex;flex-direction:column;gap:10px;min-width:0}
+fieldset.fund legend{font-family:var(--f-display);font-weight:700;padding:0 6px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+.grid2 .field label{font-size:.78rem}

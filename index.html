@@ -218,11 +218,11 @@
 <section id="fundsSheet" class="sheet" hidden aria-label="Savings opening balances">
   <div class="sheet-in">
     <div class="grab"></div>
-    <h2>Savings opening balances</h2>
-    <p class="quiet">Enter what you had already saved in each one before you started using SpendWise, for example chit instalments paid so far. You only need to do this once. The total then grows with every payment you log.</p>
+    <h2>Savings plans &amp; balances</h2>
+    <p class="quiet">For each savings envelope, enter what you had saved before SpendWise (one time). For a chit fund or RD, add the plan to see instalments left, the payout, and how its return compares with an FD.</p>
     <div id="funds-rows" style="display:flex;flex-direction:column;gap:14px"></div>
     <p id="funds-msg" class="err" hidden></p>
-    <div class="row"><button id="funds-save" class="btn primary">Save balances</button><button class="btn ghost" data-close>Cancel</button></div>
+    <div class="row"><button id="funds-save" class="btn primary">Save</button><button class="btn ghost" data-close>Cancel</button></div>
   </div>
 </section>
 
@@ -240,6 +240,7 @@
     <div class="field"><label for="r-misc">Payments under this amount go to Misc automatically (₹)</label><input id="r-misc" type="number" inputmode="numeric" min="0" step="50"></div>
     <div class="field"><label for="r-ovr">Emergency overrides allowed per month</label><input id="r-ovr" type="number" inputmode="numeric" min="0" max="10" step="1"></div>
     <div class="field"><label for="r-cap">Largest single override (₹)</label><input id="r-cap" type="number" inputmode="numeric" min="0" step="500"></div>
+    <div class="field"><label for="r-fd">FD rate to compare savings plans with (% a year)</label><input id="r-fd" type="number" inputmode="decimal" min="0" max="20" step="0.05"></div>
     <p id="rulesNote" class="quiet"></p>
     <p id="rulesMsg" class="ok" hidden></p>
     <button id="saveRules" class="btn" style="align-self:flex-start">Save rules</button>
