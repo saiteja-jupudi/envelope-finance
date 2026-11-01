@@ -1,7 +1,7 @@
 {
-  "name": "Our Envelopes",
-  "short_name": "Envelopes",
-  "description": "Shared envelope budget: monthly limits, every spend logged, balances and trends.",
+  "name": "SmartSpend",
+  "short_name": "SmartSpend",
+  "description": "Envelope budgeting for financial discipline: monthly limits, every spend logged, balances and trends.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

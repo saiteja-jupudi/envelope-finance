@@ -1,6 +1,6 @@
-# Our Envelopes
+# SmartSpend
 
-A shared envelope-budgeting web app for two people. Each month you record the salary, set a limit per envelope (Groceries, Rent, Eating out…) and log every spend. The app shows what's left in each envelope, flags overspends, and charts month-on-month trends. It installs to the home screen on Android and iPhone and keeps working offline.
+SmartSpend is an envelope-budgeting web app that brings financial discipline to young earners and households. Each month you record the salary, set a limit per envelope (Groceries, Rent, Eating out…) and log every spend. The app shows what's left in each envelope, flags overspends, and charts month-on-month trends. It installs to the home screen on Android and iPhone and keeps working offline.
 
 - **Hosting:** GitHub Pages (static files in this repo)
 - **Accounts and data:** Firebase Authentication (email + password, password-reset emails) and Cloud Firestore
