@@ -57,6 +57,10 @@ const authErr = e => AUTH_ERR[e && e.code] || 'Something went wrong. Try again.'
 /* ---------- state ---------- */
 let me = null, hid = null, household = null;
 let months = {}, txns = [], loadedM = false, loadedT = false, unsubs = [];
+let requests = [], seenReq = new Map();
+const members = () => (household && household.members) || [];
+const partnerIds = () => members().filter(u => me && u !== me.uid);
+const partnerLabel = () => { const p = partnerIds(); return p.length ? p.map(u => whoName(u)).join(' or ') : 'your partner'; };
 let THIS = mkey(new Date());
 let cur = THIS, view = 'month', filterEnv = 'all', addEnv = null, planDraft = null, armed = null, armTimer = null;
 const hhRef = () => doc(fs, 'households', hid);
@@ -141,7 +145,7 @@ async function enterApp(user) {
 }
 function stopSubs() { unsubs.forEach(u => u()); unsubs = []; }
 function openHousehold(id) {
-  stopSubs(); hid = id; months = {}; txns = []; loadedM = loadedT = false; household = null;
+  stopSubs(); hid = id; months = {}; txns = []; requests = []; seenReq = new Map(); loadedM = loadedT = false; household = null;
   show('appView'); render();
   const onErr = e => { console.error(e); status(e.code === 'permission-denied' ? 'You no longer have access to this household.' : 'Lost the connection to your data. Reopen the app to reconnect.'); };
   unsubs.push(onSnapshot(hhRef(), s => { household = s.exists() ? s.data() : null; render(); }, onErr));
@@ -151,7 +155,18 @@ function openHousehold(id) {
   unsubs.push(onSnapshot(collection(fs, 'households', id, 'txns'), s => {
     txns = []; s.forEach(d => { const x = d.data(); if (x.month && typeof x.amount === 'number') txns.push({ id: d.id, ...x }); }); loadedT = true; render();
   }, onErr));
+  unsubs.push(onSnapshot(collection(fs, 'households', id, 'requests'), s => {
+    const next = []; s.forEach(d => { const r = d.data(); if (Array.isArray(r.changes)) next.push({ id: d.id, ...r }); });
+    for (const r of next) {
+      const prev = seenReq.get(r.id);
+      if (prev === 'pending' && r.status !== 'pending' && r.requestedBy === me.uid)
+        toast(`${cap(whoName(r.decidedBy))} ${r.status === 'approved' ? 'approved' : 'declined'} your limit request`);
+      seenReq.set(r.id, r.status);
+    }
+    requests = next; render();
+  }, onErr));
 }
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 onAuthStateChanged(auth, user => {
   stopSubs(); closeSheets();
   if (!user) { me = null; hid = null; setAuthMode('signin'); show('authView'); return; }
@@ -200,7 +215,7 @@ function renderMonth() {
   const s = stats(cur);
   if (!s.plan) {
     const prev = prevPlanKey(cur);
-    main.innerHTML = `<div class="empty"><h2>No envelopes for ${label(cur)} yet</h2>
+    main.innerHTML = approvalsHTML() + `<div class="empty"><h2>No envelopes for ${label(cur)} yet</h2>
       <p>When salary comes in, enter it and set a limit for each envelope. Then log each spend against an envelope, and the balance updates on both phones.</p>
       <div class="row">${prev ? `<button class="btn primary" data-act="copy" data-k="${prev}">Copy ${label(prev, true)} envelopes</button>` : ''}<button class="btn ${prev ? '' : 'primary'}" data-act="fresh">${prev ? 'Start from scratch' : 'Set up envelopes'}</button></div>
     </div>${s.t.length ? ledgerHTML(s) : ''}`;
@@ -209,7 +224,7 @@ function renderMonth() {
   const frac = dayFrac(cur), left = s.budget - s.spent, pct = s.budget ? Math.min(100, s.spent / s.budget * 100) : 0;
   const overN = s.env.filter(e => (s.byEnv[e.id] || 0) > (+e.limit || 0)).length;
   const paceTxt = cur === THIS ? `Day ${new Date().getDate()} of ${daysIn(cur)} · ${Math.round(frac * 100)}% of the month gone, ${Math.round(s.budget ? s.spent / s.budget * 100 : 0)}% of the budget spent` : cur < THIS ? 'Month closed' : 'Upcoming month';
-  let html = `<section class="summary">
+  let html = approvalsHTML() + `<section class="summary">
     <div class="left"><span class="label">Left in envelopes</span><span class="num ${left < 0 ? 'neg' : ''}">${fmt(left)}</span><span class="sub">${fmt(s.spent)} spent of ${fmt(s.budget)} budgeted</span></div>
     <div><span class="meter ${s.spent > s.budget ? 'over' : ''}"><i style="width:${pct}%"></i>${frac > 0 && frac < 1 ? `<b class="pace" style="left:calc(${frac * 100}% - 1px)" title="Where spending would be at an even pace"></b>` : ''}</span>
     <p class="pacenote">${paceTxt}</p></div>
@@ -235,6 +250,42 @@ function renderMonth() {
   if (s.unplanned > 0) html += `<div class="env over"><span class="name">Removed envelopes</span><span class="rest">${fmt(s.unplanned)}</span><span class="of">spent from envelopes no longer in this month's plan</span></div>`;
   html += `</div></section>${ledgerHTML(s)}`;
   main.innerHTML = html;
+}
+
+function approvalsHTML() {
+  const pend = requests.filter(r => r.status === 'pending').sort((a, b) => (a.requestedAt || 0) - (b.requestedAt || 0));
+  if (!pend.length) return '';
+  let h = `<section class="approvals"><div class="sechead"><h2>Waiting for approval</h2><span class="label">${pend.length}</span></div>`;
+  for (const r of pend) {
+    const mine = r.requestedBy === me.uid;
+    const lines = r.changes.map(c => `<li><b>${esc(c.name)}</b> <span class="mono">${fmt(c.from)} → ${fmt(c.to)}</span> <span class="up">+${fmt(c.to - c.from)}</span></li>`).join('');
+    h += `<div class="appr ${mine ? 'mine' : ''}">
+      <p class="who">${mine ? 'You asked ' + esc(partnerLabel()) : esc(cap(whoName(r.requestedBy))) + ' asks to raise'} · ${label(r.month, true)}</p>
+      <ul>${lines}</ul>${r.reason ? `<p class="reason">“${esc(r.reason)}”</p>` : ''}
+      <div class="row">${mine
+        ? `<button class="btn small" data-act="rq-cancel" data-id="${esc(r.id)}">Withdraw request</button>`
+        : `<button class="btn primary small" data-act="rq-approve" data-id="${esc(r.id)}">Approve</button><button class="btn small" data-act="rq-decline" data-id="${esc(r.id)}">Decline</button>`}</div>
+    </div>`;
+  }
+  return h + '</section>';
+}
+
+function decideRequest(id, approve) {
+  const r = requests.find(x => x.id === id);
+  if (!r || r.status !== 'pending' || r.requestedBy === me.uid) return;
+  const batch = writeBatch(fs);
+  if (approve) {
+    const plan = months[r.month];
+    const envs = plan ? plan.envelopes.map(e => ({ ...e })) : [];
+    for (const c of r.changes) {
+      const e = envs.find(x => x.id === c.envelopeId);
+      if (e) e.limit = Math.max(+e.limit || 0, c.to); else envs.push({ id: c.envelopeId, name: c.name, limit: c.to });
+    }
+    batch.set(doc(fs, 'households', hid, 'months', r.month), { salary: plan ? plan.salary || 0 : 0, envelopes: envs, updatedAt: Date.now(), by: me.uid });
+  }
+  batch.update(doc(fs, 'households', hid, 'requests', id), { status: approve ? 'approved' : 'declined', decidedBy: me.uid, decidedAt: Date.now() });
+  batch.commit().catch(x => { console.error(x); toast('Could not save your answer. Try again.'); });
+  toast(approve ? 'Approved. The new limits apply now.' : 'Declined. The limits stay as they were.');
 }
 
 function ledgerHTML(s) {
@@ -380,7 +431,9 @@ $('#add-save').addEventListener('click', () => {
     .catch(x => { console.error(x); toast('That spend could not be saved. Add it again.'); });
   closeSheets();
   const left = (+e.limit || 0) - ((s.byEnv[e.id] || 0) + amt);
-  toast(left < 0 ? `Saved. ${e.name} is over by ${fmt(-left)}` : `Saved. ${fmt(left)} left in ${e.name}`);
+  toast(left >= 0 ? `Saved. ${fmt(left)} left in ${e.name}`
+    : partnerIds().length ? `Saved. ${e.name} is over by ${fmt(-left)}. To raise its limit, edit envelopes and ${partnerLabel()} will be asked.`
+    : `Saved. ${e.name} is over by ${fmt(-left)}`);
 });
 
 function openPlan(mode, fromKey) {
@@ -388,6 +441,9 @@ function openPlan(mode, fromKey) {
   planDraft = { salary: base ? base.salary : '', envelopes: base ? base.envelopes.map(e => ({ ...e })) : DEFAULTS.map(n => ({ id: uid(), name: n, limit: '' })) };
   $('#planTitle').textContent = (mode === 'edit' ? 'Edit ' : 'Set up ') + label(cur) + ' envelopes';
   $('#plan-salary').value = planDraft.salary; $('#plan-err').hidden = true;
+  const needsOk = !!months[cur] && partnerIds().length > 0;
+  $('#plan-note').hidden = !needsOk; $('#f-reason').hidden = !needsOk; $('#plan-reason').value = '';
+  if (needsOk) $('#plan-note').textContent = `Raising a limit or adding an envelope needs ${partnerLabel()}’s approval. Lowering a limit or changing the salary applies straight away.`;
   renderPlanRows(); openSheet('planSheet');
 }
 function renderPlanRows() {
@@ -408,9 +464,33 @@ $('#plan-save').addEventListener('click', () => {
   if (!envs.length) return fail('Add at least one envelope.');
   if (envs.some(e => !e.name)) return fail('Give every envelope a name.');
   const seen = new Set(); for (const e of envs) { const n = e.name.toLowerCase(); if (seen.has(n)) return fail(`“${e.name}” appears twice. Use different names.`); seen.add(n); }
-  setDoc(doc(fs, 'households', hid, 'months', cur), { salary: Math.round(+$('#plan-salary').value || 0), envelopes: envs, updatedAt: Date.now(), by: me.uid })
-    .catch(x => { console.error(x); toast('Envelopes could not be saved. Try again.'); });
-  closeSheets(); toast('Envelopes saved for ' + label(cur, true));
+  const salary = Math.round(+$('#plan-salary').value || 0), prev = months[cur];
+  const monthRef = doc(fs, 'households', hid, 'months', cur);
+  const saveFail = x => { console.error(x); toast('Envelopes could not be saved. Try again.'); };
+
+  // First plan of the month, or nobody to ask: applies at once.
+  if (!prev || !partnerIds().length) {
+    setDoc(monthRef, { salary, envelopes: envs, updatedAt: Date.now(), by: me.uid }).catch(saveFail);
+    closeSheets(); toast('Envelopes saved for ' + label(cur, true)); return;
+  }
+  // Increases become a request; everything else applies now.
+  const prevById = Object.fromEntries(prev.envelopes.map(e => [e.id, e]));
+  const changes = [];
+  const applied = envs.map(e => {
+    const from = prevById[e.id] ? (+prevById[e.id].limit || 0) : 0;
+    if (e.limit > from) { changes.push({ envelopeId: e.id, name: e.name, from, to: e.limit }); return { ...e, limit: from }; }
+    return e;
+  });
+  const batch = writeBatch(fs);
+  batch.set(monthRef, { salary, envelopes: applied, updatedAt: Date.now(), by: me.uid });
+  if (changes.length) batch.set(doc(collection(fs, 'households', hid, 'requests')), {
+    month: cur, changes, reason: $('#plan-reason').value.trim(), status: 'pending', requestedBy: me.uid, requestedAt: Date.now()
+  });
+  batch.commit().catch(saveFail);
+  closeSheets();
+  toast(changes.length
+    ? `Saved. ${changes.length === 1 ? 'The increase is' : changes.length + ' increases are'} waiting for ${partnerLabel()} to approve.`
+    : 'Envelopes saved for ' + label(cur, true));
 });
 
 /* ---------- account ---------- */
@@ -440,6 +520,9 @@ $('#main').addEventListener('click', ev => {
   else if (a === 'fresh') openPlan('fresh');
   else if (a === 'edit') openPlan('edit');
   else if (a === 'filter') { filterEnv = b.dataset.env; render(); }
+  else if (a === 'rq-approve') decideRequest(b.dataset.id, true);
+  else if (a === 'rq-decline') decideRequest(b.dataset.id, false);
+  else if (a === 'rq-cancel') { deleteDoc(doc(fs, 'households', hid, 'requests', b.dataset.id)).catch(() => toast('Could not withdraw. Try again.')); toast('Request withdrawn'); }
   else if (a === 'del') {
     const id = b.dataset.id;
     if (armed !== id) { armed = id; clearTimeout(armTimer); armTimer = setTimeout(() => { armed = null; render(); }, 3500); render(); return; }

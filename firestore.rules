@@ -43,6 +43,22 @@ service cloud.firestore {
       match /months/{month} {
         allow read, write: if isMember(hid);
       }
+      // Limit increases: requested by one member, decided only by another.
+      match /requests/{rid} {
+        allow read: if isMember(hid);
+        allow create: if isMember(hid)
+          && request.resource.data.requestedBy == request.auth.uid
+          && request.resource.data.status == 'pending';
+        allow update: if isMember(hid)
+          && resource.data.status == 'pending'
+          && request.auth.uid != resource.data.requestedBy
+          && request.resource.data.decidedBy == request.auth.uid
+          && request.resource.data.status in ['approved', 'declined']
+          && request.resource.data.changes == resource.data.changes;
+        allow delete: if isMember(hid)
+          && resource.data.requestedBy == request.auth.uid
+          && resource.data.status == 'pending';
+      }
       match /txns/{txn} {
         allow read: if isMember(hid);
         allow create, update: if isMember(hid)

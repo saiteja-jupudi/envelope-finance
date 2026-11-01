@@ -131,6 +131,14 @@ input{font:inherit;font-size:16px;color:var(--ink);background:var(--paper);borde
 .alloc{font-size:.88rem;color:var(--muted);margin:0}
 .alloc b{font-family:var(--f-mono);font-weight:500;color:var(--ink)}
 .alloc b.neg{color:var(--over)}
+.note{font-size:.88rem;margin:0;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--ink)}
+.approvals{display:flex;flex-direction:column;gap:10px}
+.appr{background:var(--card);border:1px solid var(--warn);border-left-width:4px;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.appr.mine{border-color:var(--line);border-left-color:var(--muted)}
+.appr .who{margin:0;font-weight:600}
+.appr ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.appr .up{color:var(--warn);font-family:var(--f-mono);font-size:.9rem}
+.appr .reason{margin:0;color:var(--muted);font-style:italic}
 .acct{display:flex;flex-direction:column;gap:10px;margin:0}
 .acct dt{font-size:.78rem;color:var(--muted)}
 .acct dd{margin:2px 0 0;overflow-wrap:anywhere}
