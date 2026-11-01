@@ -1,6 +1,6 @@
 {
-  "name": "SmartSpend",
-  "short_name": "SmartSpend",
+  "name": "SpendWise India",
+  "short_name": "SpendWise",
   "description": "Envelope budgeting for financial discipline: monthly limits, every spend logged, balances and trends.",
   "start_url": "./",
   "scope": "./",

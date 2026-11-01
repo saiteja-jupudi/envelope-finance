@@ -806,11 +806,11 @@ let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() 
   let deferred = null;
   addEventListener('beforeinstallprompt', e => {
     e.preventDefault(); deferred = e;
-    text.textContent = 'Install SmartSpend on your home screen to use it like an app.';
+    text.textContent = 'Install SpendWise on your home screen to use it like an app.';
     btn.hidden = false; bar.hidden = false;
   });
   if (isIOS) {
-    text.textContent = 'To use SmartSpend like an app: in Safari, tap the Share button, then “Add to Home Screen”.';
+    text.textContent = 'To use SpendWise like an app: in Safari, tap the Share button, then “Add to Home Screen”.';
     bar.hidden = false;
   }
   btn.addEventListener('click', async () => {
