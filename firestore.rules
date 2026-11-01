@@ -1,0 +1,56 @@
+rules_version = '2';
+// Our Envelopes — only members of a household can read or change its data.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function hh(hid) { return get(/databases/$(database)/documents/households/$(hid)).data; }
+    function isMember(hid) { return signedIn() && request.auth.uid in hh(hid).members; }
+
+    // Each person's own profile: which household they belong to.
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Invite codes: anyone signed in can look up a code they already know (no listing).
+    match /invites/{code} {
+      allow get: if signedIn();
+      allow create: if signedIn()
+        && request.auth.uid in getAfter(/databases/$(database)/documents/households/$(request.resource.data.householdId)).data.members;
+    }
+
+    match /households/{hid} {
+      allow get: if isMember(hid);
+
+      // Creator starts as the only member.
+      allow create: if signedIn()
+        && request.resource.data.members == [request.auth.uid]
+        && request.resource.data.createdBy == request.auth.uid;
+
+      // Members may update details but not the member list, code or creator.
+      // A non-member may add only themselves, and only by presenting the invite code.
+      allow update: if (isMember(hid)
+          && request.resource.data.members == resource.data.members
+          && request.resource.data.inviteCode == resource.data.inviteCode
+          && request.resource.data.createdBy == resource.data.createdBy)
+        || (signedIn()
+          && !(request.auth.uid in resource.data.members)
+          && resource.data.members.size() < 4
+          && request.resource.data.members == resource.data.members.concat([request.auth.uid])
+          && request.resource.data.joinCode == resource.data.inviteCode
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberNames', 'joinCode']));
+
+      match /months/{month} {
+        allow read, write: if isMember(hid);
+      }
+      match /txns/{txn} {
+        allow read: if isMember(hid);
+        allow create, update: if isMember(hid)
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.month is string;
+        allow delete: if isMember(hid);
+      }
+    }
+  }
+}

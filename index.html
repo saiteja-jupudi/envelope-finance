@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Our Envelopes</title>
+<meta name="description" content="Shared envelope budget: monthly limits, every spend logged, balances and trends.">
+<meta name="theme-color" content="#EEF2F0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D1412" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Envelopes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Sign in / sign up / forgot password -->
+<div id="authView" class="screen" hidden>
+  <div class="authbox">
+    <img class="mark" src="icons/icon-192.png" alt="" width="56" height="56">
+    <h1>Our Envelopes</h1>
+    <p class="quiet" id="authLead">Sign in to your shared budget.</p>
+    <form id="authForm" novalidate>
+      <div class="field" id="f-name" hidden><label for="a-name">Your name</label><input id="a-name" type="text" autocomplete="name" maxlength="30"></div>
+      <div class="field"><label for="a-email">Email</label><input id="a-email" type="email" autocomplete="email" inputmode="email" required></div>
+      <div class="field" id="f-pass"><label for="a-pass">Password</label><input id="a-pass" type="password" autocomplete="current-password" minlength="6"></div>
+      <p id="authMsg" class="err" hidden></p>
+      <button id="authSubmit" class="btn primary" type="submit">Sign in</button>
+    </form>
+    <div class="authlinks">
+      <button type="button" class="link" id="toForgot">Forgot password?</button>
+      <button type="button" class="link" id="toSwitch">New here? Create an account</button>
+    </div>
+  </div>
+</div>
+
+<!-- First-time: create or join a household -->
+<div id="onboardView" class="screen" hidden>
+  <div class="authbox">
+    <img class="mark" src="icons/icon-192.png" alt="" width="56" height="56">
+    <h1 id="hello">Welcome</h1>
+    <p class="quiet">Your budget lives in a shared household. One of you creates it; the other joins with its code.</p>
+    <div class="card">
+      <h2>Start a new household</h2>
+      <p class="quiet">You'll get a 6-letter code to share with your partner.</p>
+      <button id="createHH" class="btn primary">Create household</button>
+    </div>
+    <div class="card">
+      <h2>Join your partner</h2>
+      <div class="field"><label for="joinCode">Household code</label><input id="joinCode" type="text" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="e.g. K7QMRT" class="mono codeinput"></div>
+      <button id="joinHH" class="btn">Join household</button>
+    </div>
+    <p id="onboardMsg" class="err" hidden></p>
+    <button type="button" class="link" id="onboardOut">Sign out</button>
+  </div>
+</div>
+
+<!-- Setup missing -->
+<div id="setupView" class="screen" hidden>
+  <div class="authbox"><img class="mark" src="icons/icon-192.png" alt="" width="56" height="56"><h1>Almost ready</h1>
+  <p class="quiet">This copy of the app isn't connected to its Firebase project yet. Add the project settings to <code>config.js</code> and reload.</p></div>
+</div>
+
+<!-- Main app -->
+<div id="appView" class="app" hidden>
+  <header class="top">
+    <div class="brand">
+      <h1>Our Envelopes</h1>
+      <div class="brand-r">
+        <div class="seg" role="tablist">
+          <button id="tab-month" role="tab" class="on" aria-selected="true">Month</button>
+          <button id="tab-trends" role="tab" aria-selected="false">Trends</button>
+        </div>
+        <button id="acctBtn" class="avatar" aria-label="Account"></button>
+      </div>
+    </div>
+    <div class="monthnav">
+      <button id="prev" aria-label="Previous month">‹</button>
+      <button id="mlabel" class="mlabel" title="Jump to this month"></button>
+      <button id="next" aria-label="Next month">›</button>
+    </div>
+  </header>
+  <div id="status" class="status" hidden></div>
+  <main id="main"></main>
+</div>
+
+<button id="fab" class="fab" hidden>+ Add spend</button>
+<div id="backdrop" hidden></div>
+
+<section id="addSheet" class="sheet" hidden aria-label="Add a spend">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <h2 id="addTitle">Add a spend</h2>
+    <div class="field"><label for="add-amount">Amount (₹)</label><input id="add-amount" class="amount" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
+    <div class="field"><label>Envelope</label><div id="add-envs" class="envpick"></div></div>
+    <div class="field"><label for="add-note">What was it for? (optional)</label><input id="add-note" type="text" maxlength="80" placeholder="e.g. Big Basket order"></div>
+    <div class="field"><label for="add-date">Date</label><input id="add-date" type="date"></div>
+    <p id="add-err" class="err" hidden></p>
+    <div class="row"><button id="add-save" class="btn primary">Save spend</button><button class="btn ghost" data-close>Cancel</button></div>
+  </div>
+</section>
+
+<section id="planSheet" class="sheet" hidden aria-label="Month plan">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <h2 id="planTitle">Envelopes</h2>
+    <div class="field"><label for="plan-salary">Salary received this month (₹)</label><input id="plan-salary" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
+    <div class="field"><label>Envelope and monthly limit (₹)</label><div id="plan-rows" class="prows"></div></div>
+    <button id="plan-addrow" class="btn ghost" style="align-self:flex-start">+ Add envelope</button>
+    <p id="plan-alloc" class="alloc"></p>
+    <p id="plan-err" class="err" hidden></p>
+    <div class="row"><button id="plan-save" class="btn primary">Save envelopes</button><button class="btn ghost" data-close>Cancel</button></div>
+  </div>
+</section>
+
+<section id="acctSheet" class="sheet" hidden aria-label="Account">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <h2>Account</h2>
+    <dl class="acct">
+      <div><dt>Signed in as</dt><dd id="acctWho"></dd></div>
+      <div><dt>Household members</dt><dd id="acctMembers"></dd></div>
+      <div><dt>Household code</dt><dd><span id="acctCode" class="mono code"></span> <button id="copyCode" class="btn small">Copy</button></dd></div>
+    </dl>
+    <p class="quiet">Your partner signs up, chooses “Join your partner”, and enters this code.</p>
+    <p id="acctMsg" class="ok" hidden></p>
+    <div class="row">
+      <button id="acctReset" class="btn">Email me a password reset link</button>
+      <button id="acctOut" class="btn ghost">Sign out</button>
+    </div>
+  </div>
+</section>
+
+<div id="toast" role="status" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
