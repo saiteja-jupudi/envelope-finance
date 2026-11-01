@@ -1,5 +1,5 @@
 // Network-first for the app's own files, falling back to the last cached copy when offline.
-const CACHE = 'envelopes-v7';
+const CACHE = 'envelopes-v8';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', e => {

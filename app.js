@@ -246,9 +246,9 @@ function renderMonth() {
   for (const e of s.env) {
     const sp = s.byEnv[e.id] || 0, lim = +e.limit || 0, st = envStatus(e, sp, frac), w = lim ? Math.min(100, sp / lim * 100) : (sp ? 100 : 0);
     html += `<button class="env ${st.cls}" data-act="addto" data-env="${esc(e.id)}">
-      <span class="name">${esc(e.name)}</span>
-      <span class="rest">${sp > lim ? fmt(sp - lim) + ' <small>over</small>' : fmt(lim - sp) + ' <small>left</small>'}</span>
-      <span class="of">Spent ${fmt(sp)} of ${fmt(lim)}</span>
+      <span class="name">${esc(e.name)} <span class="cap">(${fmt(lim)})</span></span>
+      <span class="of">${fmt(sp)} spent out of ${fmt(lim)}</span>
+      <span class="bal"><small>Balance:</small> ${sp > lim ? '−' + fmt(sp - lim) : fmt(lim - sp)}</span>
       <span class="meter ${st.cls === 'over' ? 'over' : ''}"><i style="width:${w}%"></i></span>
       ${st.pill ? `<span class="pill ${st.cls}">${st.pill}</span>` : ''}
     </button>`;
