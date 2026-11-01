@@ -59,6 +59,10 @@ service cloud.firestore {
           && resource.data.requestedBy == request.auth.uid
           && resource.data.status == 'pending';
       }
+      // Remembers which envelope a payee was last paid from.
+      match /payees/{pid} {
+        allow read, write: if isMember(hid);
+      }
       match /txns/{txn} {
         allow read: if isMember(hid);
         allow create, update: if isMember(hid)

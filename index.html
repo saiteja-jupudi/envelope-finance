@@ -91,7 +91,10 @@
   <main id="main"></main>
 </div>
 
-<button id="fab" class="fab" hidden>+ Add spend</button>
+<div id="fabs" class="fabs" hidden>
+  <button id="fab" class="fab secondary">+ Log spend</button>
+  <button id="fabPay" class="fab">Scan &amp; Pay</button>
+</div>
 <div id="backdrop" hidden></div>
 
 <section id="addSheet" class="sheet" hidden aria-label="Add a spend">
@@ -122,6 +125,44 @@
   </div>
 </section>
 
+<section id="paySheet" class="sheet" hidden aria-label="Scan and pay">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <div id="pay-scan" class="paystep">
+      <h2>Scan &amp; Pay</h2>
+      <div id="scanBox" class="scanbox"><video id="scanVideo" playsinline muted></video><div class="scanframe" aria-hidden="true"></div></div>
+      <p id="scanMsg" class="err" hidden></p>
+      <label class="btn filebtn" for="qrFile">Upload a photo of the QR</label>
+      <input id="qrFile" type="file" accept="image/*" hidden>
+      <div class="or"><span>or enter the UPI ID</span></div>
+      <div class="field"><label for="pay-vpa">UPI ID</label><input id="pay-vpa" type="text" inputmode="email" autocapitalize="none" autocomplete="off" placeholder="name@okhdfcbank"></div>
+      <div class="field"><label for="pay-pn">Name (optional)</label><input id="pay-pn" type="text" maxlength="40" placeholder="e.g. Ravi Kirana Store"></div>
+      <div class="row"><button id="pay-manual" class="btn">Continue</button><button class="btn ghost" data-close>Cancel</button></div>
+    </div>
+    <div id="pay-details" class="paystep" hidden>
+      <div class="payee"><span class="label">Paying</span><h2 id="payTo"></h2><span id="payVpa" class="mono quiet"></span></div>
+      <div class="field"><label for="pay-amount">Amount (₹)</label><input id="pay-amount" class="amount" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
+      <div class="field"><label>Envelope</label><p id="pay-why" class="quiet"></p><div id="pay-envs" class="envpick"></div></div>
+      <div class="field"><label for="pay-note">What was it for? (optional)</label><input id="pay-note" type="text" maxlength="80" placeholder="e.g. Weekly vegetables"></div>
+      <div id="pay-warn" class="note" hidden></div>
+      <div class="field" id="f-pay-reason" hidden><label for="pay-reason">Reason for the emergency override (required)</label><input id="pay-reason" type="text" maxlength="120" placeholder="e.g. Pharmacy for fever medicine"></div>
+      <button id="pay-raise" class="btn small" hidden style="align-self:flex-start">Edit envelopes</button>
+      <div id="pay-apps" class="payapps"></div>
+      <div class="row"><button id="pay-back" class="btn ghost small">Scan again</button><button class="btn ghost small" data-close>Cancel</button></div>
+    </div>
+  </div>
+</section>
+
+<section id="confirmSheet" class="sheet" hidden aria-label="Confirm payment">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <h2 id="confirmText">Did the payment go through?</h2>
+    <p id="confirmSub" class="quiet"></p>
+    <p class="quiet">Finish paying in your UPI app, then come back here.</p>
+    <div class="row"><button id="confirmYes" class="btn primary">Yes, log it</button><button id="confirmNo" class="btn">No, it didn’t go through</button></div>
+  </div>
+</section>
+
 <section id="acctSheet" class="sheet" hidden aria-label="Account">
   <div class="sheet-in">
     <div class="grab"></div>
@@ -132,6 +173,14 @@
       <div><dt>Household code</dt><dd><span id="acctCode" class="mono code"></span> <button id="copyCode" class="btn small">Copy</button></dd></div>
     </dl>
     <p class="quiet">Your partner signs up, chooses “Join your partner”, and enters this code.</p>
+    <h2>Rules</h2>
+    <div class="field"><label for="r-misc">Payments under this amount go to Misc automatically (₹)</label><input id="r-misc" type="number" inputmode="numeric" min="0" step="50"></div>
+    <div class="field"><label for="r-ovr">Emergency overrides allowed per month</label><input id="r-ovr" type="number" inputmode="numeric" min="0" max="10" step="1"></div>
+    <div class="field"><label for="r-cap">Largest single override (₹)</label><input id="r-cap" type="number" inputmode="numeric" min="0" step="500"></div>
+    <p id="rulesNote" class="quiet"></p>
+    <p id="rulesMsg" class="ok" hidden></p>
+    <button id="saveRules" class="btn" style="align-self:flex-start">Save rules</button>
+    <hr class="sep">
     <p id="acctMsg" class="ok" hidden></p>
     <div class="row">
       <button id="acctReset" class="btn">Email me a password reset link</button>
@@ -141,6 +190,7 @@
 </section>
 
 <div id="toast" role="status" hidden></div>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js" defer></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

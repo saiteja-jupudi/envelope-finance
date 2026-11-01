@@ -27,7 +27,7 @@ const DEFAULTS = ['Rent / EMI', 'Groceries', 'Bills & utilities', 'Fuel & transp
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from(crypto.getRandomValues(new Uint32Array(6)), n => CODE_CHARS[n % CODE_CHARS.length]).join('');
 
-function show(id) { for (const v of ['authView', 'onboardView', 'setupView', 'appView']) $('#' + v).hidden = v !== id; $('#fab').hidden = true; }
+function show(id) { for (const v of ['authView', 'onboardView', 'setupView', 'appView']) $('#' + v).hidden = v !== id; $('#fabs').hidden = true; }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2600); }
 function status(msg) { const s = $('#status'); s.textContent = msg || ''; s.hidden = !msg; }
 function msg(el, text, ok) { el.textContent = text || ''; el.hidden = !text; el.className = ok ? 'ok' : 'err'; }
@@ -57,7 +57,7 @@ const authErr = e => AUTH_ERR[e && e.code] || 'Something went wrong. Try again.'
 /* ---------- state ---------- */
 let me = null, hid = null, household = null;
 let months = {}, txns = [], loadedM = false, loadedT = false, unsubs = [];
-let requests = [], seenReq = new Map();
+let requests = [], seenReq = new Map(), payees = {};
 const members = () => (household && household.members) || [];
 const partnerIds = () => members().filter(u => me && u !== me.uid);
 const partnerLabel = () => { const p = partnerIds(); return p.length ? p.map(u => whoName(u)).join(' or ') : 'your partner'; };
@@ -165,6 +165,10 @@ function openHousehold(id) {
     }
     requests = next; render();
   }, onErr));
+  unsubs.push(onSnapshot(collection(fs, 'households', id, 'payees'), s => {
+    payees = {}; s.forEach(d => payees[d.id] = d.data());
+  }, onErr));
+  setTimeout(checkPending, 600);
 }
 const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 onAuthStateChanged(auth, user => {
@@ -198,7 +202,8 @@ function render() {
   $('#acctBtn').textContent = (myName()[0] || '?').toUpperCase();
   for (const [id, v] of [['tab-month', 'month'], ['tab-trends', 'trends']]) { const b = $('#' + id); b.classList.toggle('on', view === v); b.setAttribute('aria-selected', view === v); }
   if (view === 'month') renderMonth(); else renderTrends();
-  $('#fab').hidden = !(view === 'month' && months[cur]);
+  $('#fabs').hidden = !(view === 'month' && months[cur]);
+  $('#fabPay').hidden = cur !== THIS;
 }
 
 function envStatus(e, spent, frac) {
@@ -227,7 +232,8 @@ function renderMonth() {
   let html = approvalsHTML() + `<section class="summary">
     <div class="left"><span class="label">Left in envelopes</span><span class="num ${left < 0 ? 'neg' : ''}">${fmt(left)}</span><span class="sub">${fmt(s.spent)} spent of ${fmt(s.budget)} budgeted</span></div>
     <div><span class="meter ${s.spent > s.budget ? 'over' : ''}"><i style="width:${pct}%"></i>${frac > 0 && frac < 1 ? `<b class="pace" style="left:calc(${frac * 100}% - 1px)" title="Where spending would be at an even pace"></b>` : ''}</span>
-    <p class="pacenote">${paceTxt}</p></div>
+    <p class="pacenote">${paceTxt}</p>
+    <p class="pacenote">Emergency overrides used: ${overridesUsed(cur)} of ${rules().overridesPerMonth}</p></div>
     <dl class="facts">
       <div><dt>Salary</dt><dd>${fmt(s.salary)}</dd></div>
       <div><dt>Not in envelopes</dt><dd class="${s.salary - s.budget < 0 ? 'neg' : ''}">${fmt(s.salary - s.budget)}</dd></div>
@@ -258,7 +264,7 @@ function approvalsHTML() {
   let h = `<section class="approvals"><div class="sechead"><h2>Waiting for approval</h2><span class="label">${pend.length}</span></div>`;
   for (const r of pend) {
     const mine = r.requestedBy === me.uid;
-    const lines = r.changes.map(c => `<li><b>${esc(c.name)}</b> <span class="mono">${fmt(c.from)} → ${fmt(c.to)}</span> <span class="up">+${fmt(c.to - c.from)}</span></li>`).join('');
+    const lines = r.changes.map(c => `<li><b>${esc(c.name)}</b> <span class="mono">${fmtRule(c, c.from)} → ${fmtRule(c, c.to)}</span> <span class="up">+${fmtRule(c, c.to - c.from)}</span></li>`).join('');
     h += `<div class="appr ${mine ? 'mine' : ''}">
       <p class="who">${mine ? 'You asked ' + esc(partnerLabel()) : esc(cap(whoName(r.requestedBy))) + ' asks to raise'} · ${label(r.month, true)}</p>
       <ul>${lines}</ul>${r.reason ? `<p class="reason">“${esc(r.reason)}”</p>` : ''}
@@ -275,13 +281,20 @@ function decideRequest(id, approve) {
   if (!r || r.status !== 'pending' || r.requestedBy === me.uid) return;
   const batch = writeBatch(fs);
   if (approve) {
-    const plan = months[r.month];
-    const envs = plan ? plan.envelopes.map(e => ({ ...e })) : [];
-    for (const c of r.changes) {
-      const e = envs.find(x => x.id === c.envelopeId);
-      if (e) e.limit = Math.max(+e.limit || 0, c.to); else envs.push({ id: c.envelopeId, name: c.name, limit: c.to });
+    const envChanges = r.changes.filter(c => c.kind !== 'rule'), ruleChanges = r.changes.filter(c => c.kind === 'rule');
+    if (envChanges.length) {
+      const plan = months[r.month];
+      const envs = plan ? plan.envelopes.map(e => ({ ...e })) : [];
+      for (const c of envChanges) {
+        const e = envs.find(x => x.id === c.envelopeId);
+        if (e) e.limit = Math.max(+e.limit || 0, c.to); else envs.push({ id: c.envelopeId, name: c.name, limit: c.to });
+      }
+      batch.set(doc(fs, 'households', hid, 'months', r.month), { salary: plan ? plan.salary || 0 : 0, envelopes: envs, updatedAt: Date.now(), by: me.uid });
     }
-    batch.set(doc(fs, 'households', hid, 'months', r.month), { salary: plan ? plan.salary || 0 : 0, envelopes: envs, updatedAt: Date.now(), by: me.uid });
+    if (ruleChanges.length) {
+      const upd = {}; for (const c of ruleChanges) upd['rules.' + c.key] = c.to;
+      batch.update(hhRef(), upd);
+    }
   }
   batch.update(doc(fs, 'households', hid, 'requests', id), { status: approve ? 'approved' : 'declined', decidedBy: me.uid, decidedAt: Date.now() });
   batch.commit().catch(x => { console.error(x); toast('Could not save your answer. Try again.'); });
@@ -307,7 +320,9 @@ function ledgerHTML(s) {
     h += `<div class="day"><div class="label dayhead"><span>${dt.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span><span class="mono">${fmt(tot)}</span></div>`;
     for (const x of groups[d]) {
       const en = names[x.envelopeId] || x.envelopeName || 'Removed envelope', who = whoName(x.by);
-      h += `<div class="tx"><div class="what"><div class="note">${esc(x.note || en)}</div><div class="meta">${x.note ? esc(en) + ' · ' : ''}${who ? 'by ' + esc(who) : ''}</div></div>
+      const title = x.note || x.payeeName || en;
+      const meta = [title !== en ? en : '', x.payeeName && title !== x.payeeName ? x.payeeName : '', x.via === 'upi' ? 'UPI' : '', who ? 'by ' + who : ''].filter(Boolean).map(esc).join(' · ');
+      h += `<div class="tx"><div class="what"><div class="note">${esc(title)}${x.override ? ' <span class="pill warn">Override</span>' : ''}</div><div class="meta">${meta}${x.override && x.overrideReason ? '<br>Reason: ' + esc(x.overrideReason) : ''}</div></div>
         <span class="amt">${fmt(x.amount)}</span><button class="del ${armed === x.id ? 'arm' : ''}" data-act="del" data-id="${esc(x.id)}">${armed === x.id ? 'Confirm' : 'Delete'}</button></div>`;
     }
     h += '</div>';
@@ -400,7 +415,7 @@ function cumChart(el, k) {
 
 /* ---------- sheets ---------- */
 function openSheet(id) { $('#backdrop').hidden = false; $('#' + id).hidden = false; }
-function closeSheets() { $('#backdrop').hidden = true; for (const id of ['addSheet', 'planSheet', 'acctSheet']) $('#' + id).hidden = true; }
+function closeSheets() { stopScan(); $('#backdrop').hidden = true; for (const id of ['addSheet', 'planSheet', 'acctSheet', 'paySheet', 'confirmSheet']) $('#' + id).hidden = true; }
 
 function openAdd(envId) {
   const s = stats(cur); if (!s.plan) return;
@@ -493,13 +508,251 @@ $('#plan-save').addEventListener('click', () => {
     : 'Envelopes saved for ' + label(cur, true));
 });
 
+/* ---------- household rules ---------- */
+const DEFAULT_RULES = { miscThreshold: 500, overridesPerMonth: 2, overrideCap: 5000 };
+const rules = () => ({ ...DEFAULT_RULES, ...((household && household.rules) || {}) });
+const RULE_NAMES = { overridesPerMonth: 'Emergency overrides per month', overrideCap: 'Largest single override' };
+function fmtRule(c, v) { return c.kind === 'rule' && c.key === 'overridesPerMonth' ? String(v) : fmt(v); }
+const overridesUsed = k => txns.filter(x => x.month === k && x.override).length;
+
+function fillRules() {
+  const r = rules();
+  $('#r-misc').value = r.miscThreshold; $('#r-ovr').value = r.overridesPerMonth; $('#r-cap').value = r.overrideCap;
+  $('#rulesNote').textContent = partnerIds().length
+    ? `Raising the number or size of overrides needs ${partnerLabel()}’s approval. Lowering them applies at once.`
+    : 'Overrides let a payment go over an envelope’s limit in an emergency, with a reason.';
+  msg($('#rulesMsg'), '');
+}
+$('#saveRules').addEventListener('click', () => {
+  const cur0 = rules(), m = $('#rulesMsg');
+  const next = { miscThreshold: Math.round(+$('#r-misc').value), overridesPerMonth: Math.round(+$('#r-ovr').value), overrideCap: Math.round(+$('#r-cap').value) };
+  if (!(next.miscThreshold >= 0) || !(next.overridesPerMonth >= 0 && next.overridesPerMonth <= 10) || !(next.overrideCap >= 0)) return msg(m, 'Use whole numbers. Overrides can be 0 to 10 a month.');
+  const direct = { 'rules.miscThreshold': next.miscThreshold }, changes = [];
+  for (const k of ['overridesPerMonth', 'overrideCap']) {
+    if (next[k] > cur0[k] && partnerIds().length) changes.push({ kind: 'rule', key: k, name: RULE_NAMES[k], from: cur0[k], to: next[k] });
+    else direct['rules.' + k] = next[k];
+  }
+  const batch = writeBatch(fs);
+  batch.update(hhRef(), direct);
+  if (changes.length) batch.set(doc(collection(fs, 'households', hid, 'requests')), { month: THIS, changes, reason: '', status: 'pending', requestedBy: me.uid, requestedAt: Date.now() });
+  batch.commit().catch(x => { console.error(x); msg(m, 'Could not save the rules. Try again.'); });
+  msg(m, changes.length ? `Saved. The override increase is waiting for ${partnerLabel()} to approve.` : 'Rules saved.', true);
+});
+
+/* ---------- Scan & Pay ---------- */
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/i.test(navigator.userAgent);
+const IOS_APPS = [
+  { name: 'Google Pay', prefix: 'tez://upi/pay?' },
+  { name: 'PhonePe', prefix: 'phonepe://pay?' },
+  { name: 'Paytm', prefix: 'paytmmp://upi/pay?' },
+];
+const PENDING_KEY = 'envelopes.pendingPayment';
+let pay = null, scanStream = null, scanTimer = null;
+
+function parseUPI(text) {
+  text = String(text || '').trim();
+  if (!/^upi:\/\/pay\?/i.test(text)) return null;
+  const q = new URLSearchParams(text.slice(text.indexOf('?') + 1));
+  const pa = (q.get('pa') || '').trim();
+  if (!/^[\w.\-]{2,256}@[\w.\-]{2,64}$/.test(pa)) return null;
+  const am = parseFloat(q.get('am') || '');
+  return { pa, pn: (q.get('pn') || '').trim(), am: am > 0 ? am : 0, params: q };
+}
+const payeeKey = pa => pa.toLowerCase().replace(/[^a-z0-9._@-]/g, '_');
+
+function openPay() {
+  if (!months[THIS]) { cur = THIS; render(); toast('Set up this month’s envelopes first.'); return; }
+  cur = THIS; render();
+  pay = null; $('#pay-vpa').value = ''; $('#pay-pn').value = ''; msg($('#scanMsg'), '');
+  showPayStep('scan'); openSheet('paySheet'); startScan();
+}
+function showPayStep(step) { $('#pay-scan').hidden = step !== 'scan'; $('#pay-details').hidden = step !== 'details'; }
+
+async function startScan() {
+  const v = $('#scanVideo'), m = $('#scanMsg');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('#scanBox').hidden = true; return msg(m, 'The camera isn’t available here. Upload a photo of the QR, or enter the UPI ID.'); }
+  $('#scanBox').hidden = false;
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    if ($('#paySheet').hidden) { stopScan(); return; }
+    v.srcObject = scanStream; await v.play();
+    const det = 'BarcodeDetector' in window ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+    const c = document.createElement('canvas'), ctx = c.getContext('2d', { willReadFrequently: true });
+    const tick = async () => {
+      if (!scanStream) return;
+      if (v.readyState >= 2 && v.videoWidth) {
+        let text = null;
+        try {
+          if (det) { const r = await det.detect(v); if (r[0]) text = r[0].rawValue; }
+          else if (window.jsQR) {
+            const s = Math.min(1, 640 / v.videoWidth); c.width = v.videoWidth * s; c.height = v.videoHeight * s;
+            ctx.drawImage(v, 0, 0, c.width, c.height);
+            const r = jsQR(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: 'dontInvert' });
+            if (r) text = r.data;
+          }
+        } catch { /* keep scanning */ }
+        if (text) { const p = parseUPI(text); if (p) { stopScan(); gotPayee(p); return; } msg(m, 'That QR isn’t a UPI payment code.'); }
+      }
+      scanTimer = setTimeout(tick, 250);
+    };
+    tick();
+  } catch { $('#scanBox').hidden = true; msg(m, 'Camera access was refused. Upload a photo of the QR, or enter the UPI ID.'); }
+}
+function stopScan() { clearTimeout(scanTimer); if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; } }
+
+$('#qrFile').addEventListener('change', async ev => {
+  const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  const m = $('#scanMsg');
+  try {
+    const bmp = await createImageBitmap(f);
+    const s = Math.min(1, 1200 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = bmp.width * s; c.height = bmp.height * s;
+    const ctx = c.getContext('2d'); ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    let text = null;
+    if ('BarcodeDetector' in window) { const r = await new BarcodeDetector({ formats: ['qr_code'] }).detect(c); if (r[0]) text = r[0].rawValue; }
+    if (!text && window.jsQR) { const r = jsQR(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height); if (r) text = r.data; }
+    const p = text && parseUPI(text);
+    if (p) { stopScan(); gotPayee(p); } else msg(m, text ? 'That QR isn’t a UPI payment code.' : 'No QR code found in that photo. Try a closer, sharper photo.');
+  } catch { msg(m, 'Couldn’t read that photo. Try another one.'); }
+});
+$('#pay-manual').addEventListener('click', () => {
+  const pa = $('#pay-vpa').value.trim(), pn = $('#pay-pn').value.trim();
+  const p = parseUPI('upi://pay?pa=' + encodeURIComponent(pa) + (pn ? '&pn=' + encodeURIComponent(pn) : ''));
+  if (!p) return msg($('#scanMsg'), 'Enter a UPI ID like name@okhdfcbank.');
+  stopScan(); gotPayee(p);
+});
+
+function gotPayee(p) {
+  pay = { ...p, fixedAmount: p.am > 0, envId: null, picked: false };
+  $('#payTo').textContent = p.pn || p.pa;
+  $('#payVpa').textContent = p.pn ? p.pa : '';
+  const a = $('#pay-amount'); a.value = p.am || ''; a.readOnly = pay.fixedAmount;
+  $('#pay-note').value = ''; $('#pay-reason').value = '';
+  showPayStep('details'); renderPay();
+  if (!pay.fixedAmount) setTimeout(() => a.focus(), 60);
+}
+
+function autoEnvelope(amt) {
+  const s = stats(cur), r = rules();
+  const misc = s.env.find(e => /^misc/i.test(e.name.trim()));
+  if (amt > 0 && amt < r.miscThreshold && misc) return { id: misc.id, why: `Under ${fmt(r.miscThreshold)}, so it goes to ${misc.name}.` };
+  const mem = payees[payeeKey(pay.pa)];
+  if (mem && s.env.some(e => e.id === mem.envelopeId)) return { id: mem.envelopeId, why: `Used for ${pay.pn || pay.pa} last time.` };
+  return null;
+}
+
+function renderPay() {
+  if (!pay) return;
+  const s = stats(cur), r = rules(), amt = parseFloat($('#pay-amount').value) || 0;
+  let why = '';
+  if (!pay.picked) { const a = autoEnvelope(amt); pay.envId = a ? a.id : null; why = a ? a.why : ''; }
+  $('#pay-why').textContent = pay.picked ? '' : (why || 'Pick the envelope this payment comes from.');
+  $('#pay-envs').innerHTML = s.env.map(e => {
+    const left = (+e.limit || 0) - (s.byEnv[e.id] || 0);
+    return `<button type="button" class="${e.id === pay.envId ? 'on' : ''}" data-pick="${esc(e.id)}" aria-pressed="${e.id === pay.envId}">${esc(e.name)}<small>${left < 0 ? '−' + fmt(-left) : fmt(left)}</small></button>`;
+  }).join('');
+
+  const e = s.env.find(x => x.id === pay.envId), warn = $('#pay-warn');
+  pay.needOverride = false; pay.blocked = false; warn.hidden = true; $('#f-pay-reason').hidden = true; $('#pay-raise').hidden = true;
+  if (e && amt > 0) {
+    const left = (+e.limit || 0) - (s.byEnv[e.id] || 0), over = amt - Math.max(left, 0);
+    if (over > 0) {
+      const remain = Math.max(0, r.overridesPerMonth - overridesUsed(cur));
+      warn.hidden = false;
+      if (remain > 0 && over <= r.overrideCap) {
+        pay.needOverride = true;
+        warn.innerHTML = `This takes <b>${esc(e.name)}</b> over its limit by <b>${fmt(over)}</b>. You can use an emergency override: ${remain} of ${r.overridesPerMonth} left this month${partnerIds().length ? ', and ' + esc(partnerLabel()) + ' will see the reason' : ''}.`;
+        $('#f-pay-reason').hidden = false;
+      } else {
+        pay.blocked = true;
+        warn.innerHTML = `This takes <b>${esc(e.name)}</b> over its limit by <b>${fmt(over)}</b>. ${remain ? `That’s more than the ${fmt(r.overrideCap)} override limit.` : 'No emergency overrides are left this month.'} Pick another envelope, or ${partnerIds().length ? 'ask ' + esc(partnerLabel()) + ' to raise the limit' : 'raise the limit'} first.`;
+        $('#pay-raise').hidden = false;
+      }
+    }
+  }
+  const reasonOk = !pay.needOverride || $('#pay-reason').value.trim().length > 0;
+  const ready = amt > 0 && !!e && !pay.blocked && reasonOk;
+  renderPayApps(ready, amt);
+}
+
+function upiQuery(amt) {
+  const q = new URLSearchParams(pay.params.toString());
+  q.set('pa', pay.pa); if (pay.pn) q.set('pn', pay.pn);
+  if (!pay.fixedAmount) q.set('am', amt.toFixed(2));
+  q.set('cu', 'INR');
+  const note = $('#pay-note').value.trim(); if (note && !q.get('tn')) q.set('tn', note.slice(0, 50));
+  return [...q].map(([k, v]) => k + '=' + encodeURIComponent(v).replace(/%40/g, '@')).join('&');
+}
+
+function renderPayApps(ready, amt) {
+  const box = $('#pay-apps'); let h = '';
+  if (isAndroid) h = `<button class="btn primary" data-app="upi" ${ready ? '' : 'disabled'}>Pay ${amt > 0 ? fmt(amt) : ''} with a UPI app</button><p class="quiet">Your phone will list the UPI apps you have installed.</p>`;
+  else if (isIOS) h = `<p class="quiet">Pay ${amt > 0 ? fmt(amt) : ''} with:</p><div class="row">${IOS_APPS.map((a, i) => `<button class="btn ${i ? '' : 'primary'}" data-app="ios-${i}" ${ready ? '' : 'disabled'}>${a.name}</button>`).join('')}</div><p class="quiet">If nothing opens, that app isn’t installed. Try another.</p>`;
+  else h = `<p class="quiet">Open this app on your phone to pay through a UPI app. On a computer you can still log the payment after paying another way.</p>`;
+  h += `<button class="link" data-app="other" ${ready ? '' : 'disabled'}>I paid another way, just log it</button>`;
+  box.innerHTML = h;
+}
+
+$('#pay-envs').addEventListener('click', ev => { const b = ev.target.closest('[data-pick]'); if (!b) return; pay.envId = b.dataset.pick; pay.picked = true; renderPay(); });
+$('#pay-amount').addEventListener('input', renderPay);
+$('#pay-reason').addEventListener('input', renderPay);
+$('#pay-back').addEventListener('click', () => { pay = null; showPayStep('scan'); startScan(); });
+$('#pay-raise').addEventListener('click', () => { closeSheets(); openPlan('edit'); });
+$('#pay-apps').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-app]'); if (!b || b.disabled) return;
+  const s = stats(cur), e = s.env.find(x => x.id === pay.envId), amt = parseFloat($('#pay-amount').value) || 0;
+  if (!e || !(amt > 0)) return;
+  const pending = {
+    hid, month: cur, date: todayISO(), amount: Math.round(amt * 100) / 100, envelopeId: e.id, envelopeName: e.name,
+    note: $('#pay-note').value.trim(), payeeVpa: pay.pa, payeeName: pay.pn || pay.pa,
+    override: !!pay.needOverride, overrideReason: pay.needOverride ? $('#pay-reason').value.trim() : '', at: Date.now(),
+  };
+  if (b.dataset.app === 'other') { logPayment(pending); closeSheets(); return; }
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); } catch { /* confirm sheet still shows below */ }
+  const qs = upiQuery(amt);
+  const url = b.dataset.app === 'upi' ? 'upi://pay?' + qs : IOS_APPS[+b.dataset.app.split('-')[1]].prefix + qs;
+  showConfirm(pending);
+  window.location.href = url;
+});
+
+function readPending() { try { return JSON.parse(localStorage.getItem(PENDING_KEY) || 'null'); } catch { return null; } }
+function clearPending() { try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ } }
+function checkPending() {
+  const p = readPending();
+  if (!p || !hid || p.hid !== hid || !$('#confirmSheet').hidden) return;
+  if (Date.now() - p.at > 6 * 3600e3) { clearPending(); return; }
+  showConfirm(p);
+}
+function showConfirm(p) {
+  stopScan(); for (const id of ['addSheet', 'planSheet', 'acctSheet', 'paySheet']) $('#' + id).hidden = true;
+  $('#confirmText').textContent = `Did your ${fmt(p.amount)} payment to ${p.payeeName} go through?`;
+  $('#confirmSub').textContent = `It will be logged under ${p.envelopeName}${p.override ? ' as an emergency override' : ''}.`;
+  $('#confirmSheet').dataset.p = JSON.stringify(p);
+  $('#backdrop').hidden = false; $('#confirmSheet').hidden = false;
+}
+$('#confirmYes').addEventListener('click', () => { const p = JSON.parse($('#confirmSheet').dataset.p || 'null'); clearPending(); closeSheets(); if (p) logPayment(p); });
+$('#confirmNo').addEventListener('click', () => { clearPending(); closeSheets(); toast('Nothing logged.'); });
+
+function logPayment(p) {
+  setDoc(doc(collection(fs, 'households', hid, 'txns')), {
+    month: p.month, envelopeId: p.envelopeId, envelopeName: p.envelopeName, amount: p.amount, note: p.note, date: p.date,
+    payeeName: p.payeeName, payeeVpa: p.payeeVpa, via: 'upi', override: p.override, overrideReason: p.overrideReason, by: me.uid, at: Date.now(),
+  }).catch(x => { console.error(x); toast('That payment could not be logged. Add it with “Log spend”.'); });
+  if (p.payeeVpa) setDoc(doc(fs, 'households', hid, 'payees', payeeKey(p.payeeVpa)), { vpa: p.payeeVpa, name: p.payeeName, envelopeId: p.envelopeId, at: Date.now() }).catch(() => {});
+  const s = stats(p.month), e = s.env.find(x => x.id === p.envelopeId);
+  const left = e ? (+e.limit || 0) - ((s.byEnv[e.id] || 0) + p.amount) : 0;
+  toast(p.override ? `Logged as an emergency override on ${p.envelopeName}.` : `Logged. ${fmt(left)} left in ${p.envelopeName}.`);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(checkPending, 300); });
+
 /* ---------- account ---------- */
 $('#acctBtn').addEventListener('click', () => {
   $('#acctWho').textContent = myName() + ' · ' + (me.email || '');
   const names = household && household.memberNames ? Object.entries(household.memberNames).map(([u, n]) => n + (u === me.uid ? ' (you)' : '')) : [];
   $('#acctMembers').textContent = names.length > 1 ? names.join(', ') : (names[0] || '') + ' — waiting for your partner to join';
   $('#acctCode').textContent = (household && household.inviteCode) || '—';
-  msg($('#acctMsg'), ''); openSheet('acctSheet');
+  msg($('#acctMsg'), ''); fillRules(); openSheet('acctSheet');
 });
 $('#copyCode').addEventListener('click', async () => {
   const c = $('#acctCode').textContent;
@@ -532,6 +785,7 @@ $('#main').addEventListener('click', ev => {
   }
 });
 $('#fab').addEventListener('click', () => openAdd());
+$('#fabPay').addEventListener('click', () => openPay());
 $('#backdrop').addEventListener('click', closeSheets);
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheets(); });
