@@ -85,6 +85,8 @@ main{display:flex;flex-direction:column;gap:22px;padding-top:18px}
 .env .name{font-weight:600;overflow-wrap:anywhere}
 .env .rest{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:1.05rem}
 .env.over .rest{color:var(--over)}
+.env .rest small{font-family:var(--f-body);font-size:.8rem;font-weight:500;color:var(--muted)}
+.env.over .rest small{color:var(--over)}
 .env .of{font-size:.78rem;color:var(--muted);font-family:var(--f-mono)}
 .env .meter{height:6px}
 .env.warn .meter i{background:var(--warn)}
