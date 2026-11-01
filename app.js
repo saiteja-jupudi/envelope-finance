@@ -245,7 +245,7 @@ function renderMonth() {
   <section><div class="sechead"><h2>Envelopes</h2><span class="label">Tap one to log a spend</span></div><div class="envs">`;
   for (const e of s.env) {
     const sp = s.byEnv[e.id] || 0, lim = +e.limit || 0, st = envStatus(e, sp, frac), w = lim ? Math.min(100, sp / lim * 100) : (sp ? 100 : 0);
-    html += `<button class="env ${st.cls}" data-act="addto" data-env="${esc(e.id)}">
+    html += `<button class="env ${st.cls}" style="--c:${envColor(s, e)}" data-act="addto" data-env="${esc(e.id)}">
       <span class="name">${esc(e.name)} <span class="cap">(${fmt(lim)})</span></span>
       <span class="of">${fmt(sp)} spent out of ${fmt(lim)}</span>
       <span class="bal"><small>Balance:</small> ${sp > lim ? '−' + fmt(sp - lim) : fmt(lim - sp)}</span>
@@ -429,11 +429,14 @@ function openAdd(envId) {
   $('#add-pay').hidden = cur !== THIS;
   renderPick(s); openSheet('addSheet'); setTimeout(() => $('#add-amount').focus(), 60);
 }
+// Each envelope gets one of the logo's colours, by its position in the month's plan.
+const ENV_COLORS = ['var(--teal)', 'var(--yellow)', 'var(--green)', 'var(--purple)', 'var(--orange)', 'var(--blue)'];
+function envColor(s, e) { const i = s.env.indexOf(e); return ENV_COLORS[(i < 0 ? 0 : i) % ENV_COLORS.length]; }
 // One even-sized tile per envelope: name on top, balance below. Tap again to deselect.
 function envTiles(s, selected) {
   return s.env.map(e => {
     const left = (+e.limit || 0) - (s.byEnv[e.id] || 0), on = e.id === selected;
-    return `<button type="button" class="envtile${on ? ' on' : ''}${left < 0 ? ' neg' : ''}" data-pick="${esc(e.id)}" aria-pressed="${on}"><span class="n">${esc(e.name)}</span><span class="b">${left < 0 ? '−' + fmt(-left) + ' over' : fmt(left) + ' left'}</span></button>`;
+    return `<button type="button" class="envtile${on ? ' on' : ''}${left < 0 ? ' neg' : ''}" style="--c:${envColor(s, e)}" data-pick="${esc(e.id)}" aria-pressed="${on}"><span class="n">${esc(e.name)}</span><span class="b">${left < 0 ? '−' + fmt(-left) + ' over' : fmt(left) + ' left'}</span></button>`;
   }).join('');
 }
 function renderPick(s) {
@@ -701,6 +704,7 @@ function renderPay() {
   if (chosen) {
     const left = (+chosen.limit || 0) - (s.byEnv[chosen.id] || 0);
     $('#pay-chosen-name').textContent = chosen.name;
+    $('#pay-chosen').style.setProperty('--c', envColor(s, chosen));
     const l = $('#pay-chosen-left'); l.textContent = left < 0 ? `${fmt(-left)} over` : `${fmt(left)} left`; l.classList.toggle('neg', left < 0);
     $('#pay-why').textContent = pay.picked ? '' : why;
   }

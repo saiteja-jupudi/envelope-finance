@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>SpendWise India</title>
 <meta name="description" content="Shared envelope budget: monthly limits, every spend logged, balances and trends.">
-<meta name="theme-color" content="#EEF2F0" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0D1412" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F3F6FC" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0A1126" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/favicon-64.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -23,7 +23,7 @@
 
 <!-- Install-as-app prompt (hidden once installed or dismissed) -->
 <div id="installBar" class="installbar" hidden>
-  <img src="icons/icon-192.png" alt="" width="36" height="36">
+  <img src="icons/logo-mark.png" alt="" width="36" height="36">
   <p id="installText">Install SpendWise on your home screen to use it like an app.</p>
   <button id="installBtn" class="btn primary small" hidden>Install</button>
   <button id="installClose" class="btn ghost small" aria-label="Dismiss">Not now</button>
@@ -32,8 +32,8 @@
 <!-- Sign in / sign up / forgot password -->
 <div id="authView" class="screen" hidden>
   <div class="authbox">
-    <img class="mark" src="icons/icon-192.png" alt="" width="56" height="56">
-    <h1>SpendWise India</h1>
+    <img class="mark" src="icons/logo-mark.png" alt="SpendWise India logo" width="72" height="72">
+    <div class="wordmark"><h1>SpendWise</h1><span class="in">India</span></div>
     <p class="quiet" id="authLead">Sign in to your shared budget.</p>
     <form id="authForm" novalidate>
       <div class="field" id="f-name" hidden><label for="a-name">Your name</label><input id="a-name" type="text" autocomplete="name" maxlength="30"></div>
@@ -52,7 +52,7 @@
 <!-- First-time: create or join a household -->
 <div id="onboardView" class="screen" hidden>
   <div class="authbox">
-    <img class="mark" src="icons/icon-192.png" alt="" width="56" height="56">
+    <img class="mark" src="icons/logo-mark.png" alt="" width="72" height="72">
     <h1 id="hello">Welcome</h1>
     <p class="quiet">Your budget lives in a shared household. One of you creates it; the other joins with its code.</p>
     <div class="card">
@@ -72,7 +72,7 @@
 
 <!-- Setup missing -->
 <div id="setupView" class="screen" hidden>
-  <div class="authbox"><img class="mark" src="icons/icon-192.png" alt="" width="56" height="56"><h1>Almost ready</h1>
+  <div class="authbox"><img class="mark" src="icons/logo-mark.png" alt="" width="72" height="72"><h1>Almost ready</h1>
   <p class="quiet">This copy of the app isn't connected to its Firebase project yet. Add the project settings to <code>config.js</code> and reload.</p></div>
 </div>
 
@@ -80,7 +80,7 @@
 <div id="appView" class="app" hidden>
   <header class="top">
     <div class="brand">
-      <h1>SpendWise India</h1>
+      <div class="brand-l"><img class="logo-sm" src="icons/logo-mark.png" alt="" width="34" height="34"><h1>SpendWise India</h1></div>
       <div class="brand-r">
         <div class="seg" role="tablist">
           <button id="tab-month" role="tab" class="on" aria-selected="true">Month</button>

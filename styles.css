@@ -1,17 +1,22 @@
-/* Layout: one narrow column — sticky month bar, summary, envelope grid, ledger; bottom sheets for entry */
+/* Layout: one narrow column — sticky month bar, summary, envelope grid, ledger; bottom sheets for entry.
+   Colours follow the SpendWise India logo: navy text, a teal-to-blue envelope, and one colour per envelope. */
 :root{
-  --paper:#EEF2F0; --card:#FFFFFF; --ink:#15201D; --muted:#5A6A65; --line:#D6DEDA;
-  --accent:#0D6B5D; --accent-ink:#FFFFFF; --accent-soft:#D5ECE6; --flap:#E3EAE7;
-  --warn:#A86200; --warn-soft:#FAE9CC; --over:#C0342A; --over-soft:#F8DCD8;
+  --paper:#F3F6FC; --card:#FFFFFF; --ink:#0E1B3D; --muted:#5A6684; --line:#DCE3F0;
+  --accent:#1A5FD0; --accent-ink:#FFFFFF; --accent-soft:#E3ECFC; --flap:#E9EEF7;
+  --grad:linear-gradient(135deg,#16C6BE 0%,#1A5FD0 100%);
+  --teal:#0FB3AC; --yellow:#E9A21B; --green:#2FB85C; --purple:#8A5CDB; --orange:#EE7418; --blue:#1A5FD0;
+  --warn:#B06400; --warn-soft:#FDEBCF; --over:#D2382A; --over-soft:#FBE1DD;
   --f-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
   --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root{
-  --paper:#0D1412; --card:#151E1B; --ink:#E4EDEA; --muted:#93A49F; --line:#25322E;
-  --accent:#4CC2AC; --accent-ink:#04201A; --accent-soft:#143A32; --flap:#1C2724;
-  --warn:#F0A83E; --warn-soft:#3A2A0F; --over:#FF7B6C; --over-soft:#3E1D18; color-scheme:dark}}
+  --paper:#0A1126; --card:#121B35; --ink:#E8EDFA; --muted:#9AA6C6; --line:#25304F;
+  --accent:#5B95FF; --accent-ink:#FFFFFF; --accent-soft:#1A2A52; --flap:#1B2644;
+  --grad:linear-gradient(135deg,#18BDB6 0%,#2A6BE0 100%);
+  --teal:#2FD6CE; --yellow:#FFC44D; --green:#55D883; --purple:#B48DFF; --orange:#FF9A45; --blue:#6EA2FF;
+  --warn:#F2A93B; --warn-soft:#3A2A12; --over:#FF7A6B; --over-soft:#401D1F; color-scheme:dark}}
 
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -34,7 +39,13 @@ code{font-family:var(--f-mono);font-size:.9em}
 .authbox{width:100%;max-width:400px;display:flex;flex-direction:column;gap:16px}
 .authbox h1{font-size:1.8rem}
 .authbox form{display:flex;flex-direction:column;gap:14px}
-.mark{width:56px;height:56px;border-radius:14px}
+.mark{width:72px;height:72px}
+.wordmark{display:flex;flex-direction:column;gap:2px}
+.wordmark .in{font-family:var(--f-body);font-size:.8rem;letter-spacing:.45em;text-transform:uppercase;color:var(--muted);padding-left:2px}
+.wordmark h1{position:relative;display:inline-block;padding-bottom:4px}
+.wordmark h1::after{content:"";position:absolute;right:0;bottom:0;width:46%;height:3px;border-radius:3px;background:var(--orange)}
+.logo-sm{width:34px;height:34px;flex:none}
+.brand-l{display:flex;align-items:center;gap:8px;min-width:0}
 .authlinks{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
 .link{border:0;background:none;padding:4px 0;color:var(--accent);font-weight:500;text-align:left}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
@@ -50,7 +61,7 @@ h1{font-family:var(--f-display);font-weight:700;font-size:1.35rem;margin:0;lette
 h2{font-family:var(--f-display);font-weight:700;font-size:1.05rem;margin:0;text-wrap:balance}
 .seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px}
 .seg button{border:0;background:none;padding:6px 14px;border-radius:999px;font-weight:500;color:var(--muted)}
-.seg button.on{background:var(--ink);color:var(--paper)}
+.seg button.on{background:var(--grad);color:#fff}
 .avatar{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--accent-soft);color:var(--accent);font-weight:600}
 .monthnav{display:flex;align-items:center;justify-content:space-between}
 .monthnav>button:not(.mlabel){border:1px solid var(--line);background:var(--card);width:38px;height:38px;border-radius:50%;font-size:1.2rem;line-height:1}
@@ -66,7 +77,7 @@ main{display:flex;flex-direction:column;gap:22px;padding-top:18px}
 .left .num.neg{color:var(--over)}
 .sub{color:var(--muted);font-size:.9rem}
 .meter{position:relative;display:block;height:10px;border-radius:5px;background:var(--accent-soft)}
-.meter i{position:absolute;inset:0 auto 0 0;border-radius:5px;background:var(--accent)}
+.meter i{position:absolute;inset:0 auto 0 0;border-radius:5px;background:var(--grad)}
 .meter.over i{background:var(--over)}
 .meter .pace{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink);border-radius:1px}
 .pacenote{font-size:.8rem;color:var(--muted);margin:6px 0 0}
@@ -78,7 +89,8 @@ main{display:flex;flex-direction:column;gap:22px;padding-top:18px}
 
 .envs{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:10px}
 .env{position:relative;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:26px 12px 12px;display:flex;flex-direction:column;gap:6px;overflow:hidden;min-width:0}
-.env::before{content:"";position:absolute;inset:0 0 auto 0;height:18px;background:var(--flap);clip-path:polygon(0 0,100% 0,50% 100%)}
+.env{border-top:3px solid var(--c,var(--accent))}
+.env::before{content:"";position:absolute;inset:0 0 auto 0;height:18px;background:var(--flap);background:color-mix(in srgb,var(--c,var(--accent)) 28%,var(--card));clip-path:polygon(0 0,100% 0,50% 100%)}
 .env.warn::before{background:var(--warn-soft)}
 .env.over{border-color:var(--over)}
 .env.over::before{background:var(--over-soft)}
@@ -91,6 +103,8 @@ main{display:flex;flex-direction:column;gap:22px;padding-top:18px}
 .env.over .bal,.env.over .bal small{color:var(--over)}
 .env .of{font-size:.78rem;color:var(--muted);font-family:var(--f-mono)}
 .env .meter{height:6px}
+.env .meter i{background:var(--c,var(--accent))}
+.env .meter.over i{background:var(--over)}
 .env.warn .meter i{background:var(--warn)}
 .pill{align-self:flex-start;font-size:.7rem;font-weight:600;padding:2px 8px;border-radius:999px;letter-spacing:.02em}
 .pill.over{background:var(--over-soft);color:var(--over)}
@@ -110,7 +124,7 @@ main{display:flex;flex-direction:column;gap:22px;padding-top:18px}
 .del.arm{color:var(--over);font-weight:600}
 
 .btn{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:11px 16px;font-weight:600}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary{background:var(--accent);background:var(--grad);border-color:transparent;color:#fff}
 .btn.ghost{background:none}
 .btn.small{padding:4px 10px;font-size:.8rem}
 .btn:disabled{opacity:.5;cursor:default}
@@ -122,7 +136,7 @@ main{display:flex;flex-direction:column;gap:22px;padding-top:18px}
 .ok{color:var(--accent);font-size:.88rem;margin:0}
 
 .fabs{position:fixed;right:max(16px,calc(env(safe-area-inset-right,0px) + 16px));bottom:calc(env(safe-area-inset-bottom,0px) + 18px);z-index:6;display:flex;gap:10px;align-items:center}
-.fab{border:0;background:var(--accent);color:var(--accent-ink);font-weight:600;padding:14px 20px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.fab{border:0;background:var(--grad);color:#fff;font-weight:600;padding:14px 20px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .fab.secondary{background:var(--card);color:var(--ink);border:1px solid var(--line);padding:12px 16px}
 .paystep{display:flex;flex-direction:column;gap:14px}
 .picked{display:flex;flex-direction:column;gap:10px;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
@@ -159,7 +173,7 @@ input{font:inherit;font-size:16px;color:var(--ink);background:var(--paper);borde
 /* Envelope picker: a 2-column grid of equal tiles; it scrolls with the sheet, never on its own */
 .envpick{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 /* The chosen envelope, collapsed to one line */
-.chosen{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:12px 14px}
+.chosen{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--accent-soft);background:color-mix(in srgb,var(--c,var(--accent)) 16%,var(--card));border:1px solid var(--c,var(--accent));border-left-width:5px;border-radius:12px;padding:12px 14px}
 .chosen-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
 .chosen-txt b{font-size:1rem;overflow-wrap:anywhere}
 .chosen-txt span{font-family:var(--f-mono);font-size:.88rem;color:var(--accent)}
@@ -167,12 +181,12 @@ input{font:inherit;font-size:16px;color:var(--ink);background:var(--paper);borde
 .chosen-txt small:empty{display:none}
 /* Action bar pinned to the bottom of a sheet, so Pay is always within reach */
 .sheet-actions{position:sticky;bottom:calc(-1 * (env(safe-area-inset-bottom,0px) + 18px));z-index:2;background:var(--card);border-top:1px solid var(--line);margin:0 calc(-1 * max(16px,env(safe-area-inset-left,0px))) calc(-1 * (env(safe-area-inset-bottom,0px) + 18px));padding:12px max(16px,env(safe-area-inset-left,0px)) calc(env(safe-area-inset-bottom,0px) + 14px);display:flex;flex-direction:column;gap:10px}
-.envtile{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-height:64px;padding:10px 12px;text-align:left;border:1px solid var(--line);background:var(--paper);border-radius:12px;min-width:0}
+.envtile{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-height:64px;padding:10px 12px;text-align:left;border:1px solid var(--line);border-left:5px solid var(--c,var(--accent));background:var(--paper);border-radius:12px;min-width:0}
 .envtile .n{font-weight:600;font-size:.92rem;line-height:1.25;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .envtile .b{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:.8rem;color:var(--muted)}
 .envtile.neg .b{color:var(--over)}
-.envtile.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.envtile.on .b{color:var(--accent-ink);opacity:.85}
+.envtile.on{background:var(--accent-soft);background:color-mix(in srgb,var(--c,var(--accent)) 24%,var(--card));border-color:var(--c,var(--accent));box-shadow:inset 0 0 0 1px var(--c,var(--accent))}
+.envtile.on .b{color:var(--ink)}
 @media (min-width:600px){.envpick{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .prows{display:flex;flex-direction:column;gap:8px}
 .prow{display:grid;grid-template-columns:minmax(0,1fr) 116px 34px;gap:8px;align-items:center}
