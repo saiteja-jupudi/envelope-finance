@@ -21,6 +21,14 @@
 </head>
 <body>
 
+<!-- Install-as-app prompt (hidden once installed or dismissed) -->
+<div id="installBar" class="installbar" hidden>
+  <img src="icons/icon-192.png" alt="" width="36" height="36">
+  <p id="installText">Install Envelopes on your home screen to use it like an app.</p>
+  <button id="installBtn" class="btn primary small" hidden>Install</button>
+  <button id="installClose" class="btn ghost small" aria-label="Dismiss">Not now</button>
+</div>
+
 <!-- Sign in / sign up / forgot password -->
 <div id="authView" class="screen" hidden>
   <div class="authbox">

@@ -796,5 +796,32 @@ $('#tab-month').addEventListener('click', () => { view = 'month'; render(); });
 $('#tab-trends').addEventListener('click', () => { view = 'trends'; render(); });
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (view === 'trends') render(); }, 150); });
 
+/* ---------- install prompt ---------- */
+(() => {
+  const KEY = 'envelopes.installDismissed';
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  let dismissed = false; try { dismissed = localStorage.getItem(KEY) === '1'; } catch { /* ignore */ }
+  if (standalone || dismissed) return;
+  const bar = $('#installBar'), btn = $('#installBtn'), text = $('#installText');
+  let deferred = null;
+  addEventListener('beforeinstallprompt', e => {
+    e.preventDefault(); deferred = e;
+    text.textContent = 'Install Envelopes on your home screen to use it like an app.';
+    btn.hidden = false; bar.hidden = false;
+  });
+  if (isIOS) {
+    text.textContent = 'To use Envelopes like an app: in Safari, tap the Share button, then “Add to Home Screen”.';
+    bar.hidden = false;
+  }
+  btn.addEventListener('click', async () => {
+    if (!deferred) return;
+    deferred.prompt();
+    try { await deferred.userChoice; } catch { /* ignore */ }
+    deferred = null; bar.hidden = true;
+  });
+  addEventListener('appinstalled', () => { bar.hidden = true; });
+  $('#installClose').addEventListener('click', () => { bar.hidden = true; try { localStorage.setItem(KEY, '1'); } catch { /* ignore */ } });
+})();
+
 updateOnline();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

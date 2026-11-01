@@ -24,6 +24,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .num,.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 code{font-family:var(--f-mono);font-size:.9em}
 
+/* install prompt */
+.installbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--card);border-bottom:1px solid var(--line);padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.installbar img{border-radius:9px;flex:none}
+.installbar p{flex:1;min-width:180px;margin:0;font-size:.9rem}
+
 /* auth & onboarding */
 .screen{min-height:100vh;min-height:100dvh;display:flex;align-items:flex-start;justify-content:center;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:48px 32px}
 .authbox{width:100%;max-width:400px;display:flex;flex-direction:column;gap:16px}
