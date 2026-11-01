@@ -182,13 +182,36 @@ addEventListener('online', updateOnline); addEventListener('offline', updateOnli
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { const t = mkey(new Date()); if (t !== THIS) { if (cur === THIS) cur = t; THIS = t; } render(); } });
 
 /* ---------- calculations ---------- */
+// Envelopes are either for spending or for saving/investing. An envelope without an explicit
+// type is treated as savings when its name says so (chit fund, SIP, RD, FD, PPF, gold...).
+const SAVE_RE = /chit|\bsips?\b|saving|invest|mutual|\bmf\b|\brd\b|\bfd\b|ppf|nps|gold|emergency fund|stock|equity/i;
+const MARKET_RE = /\bsips?\b|mutual|\bmf\b|stock|share|equity|nps|gold/i;
+const isSave = e => !!e && (e.type ? e.type === 'save' : SAVE_RE.test(e.name || ''));
+
 function stats(k) {
   const plan = months[k] || null, env = (plan && plan.envelopes) || [];
   const t = txns.filter(x => x.month === k);
-  const ids = new Set(env.map(e => e.id));
-  const byEnv = {}; let unplanned = 0;
-  for (const x of t) { if (ids.has(x.envelopeId)) byEnv[x.envelopeId] = (byEnv[x.envelopeId] || 0) + x.amount; else unplanned += x.amount; }
-  return { plan, env, t, byEnv, unplanned, budget: env.reduce((s, e) => s + (+e.limit || 0), 0), spent: t.reduce((s, x) => s + x.amount, 0), salary: plan ? +plan.salary || 0 : 0 };
+  const byId = Object.fromEntries(env.map(e => [e.id, e]));
+  const byEnv = {}; let unplanned = 0, saved = 0, spent = 0;
+  for (const x of t) {
+    const e = byId[x.envelopeId];
+    if (e) byEnv[e.id] = (byEnv[e.id] || 0) + x.amount; else unplanned += x.amount;
+    if (e && isSave(e)) saved += x.amount; else spent += x.amount;
+  }
+  const spendEnv = env.filter(e => !isSave(e)), saveEnv = env.filter(isSave);
+  const sumLimits = list => list.reduce((a, e) => a + (+e.limit || 0), 0);
+  return {
+    plan, env, spendEnv, saveEnv, t, byEnv, unplanned,
+    budget: sumLimits(spendEnv), spent, saveTarget: sumLimits(saveEnv), saved, total: spent + saved,
+    salary: plan ? +plan.salary || 0 : 0,
+  };
+}
+// Running total for a savings envelope: one-time opening balance + every payment into it, all months.
+function fundTotal(e) {
+  const f = household && household.funds && household.funds[e.id];
+  const opening = f ? +f.opening || 0 : 0, n = e.name.trim().toLowerCase();
+  const contributed = txns.filter(x => x.envelopeId === e.id || (x.envelopeName || '').trim().toLowerCase() === n).reduce((a, x) => a + x.amount, 0);
+  return { opening, contributed, total: opening + contributed };
 }
 const dayFrac = k => k < THIS ? 1 : k > THIS ? 0 : new Date().getDate() / daysIn(k);
 const prevPlanKey = k => Object.keys(months).filter(x => x < k).sort().pop() || null;
@@ -227,23 +250,25 @@ function renderMonth() {
     return;
   }
   const frac = dayFrac(cur), left = s.budget - s.spent, pct = s.budget ? Math.min(100, s.spent / s.budget * 100) : 0;
-  const overN = s.env.filter(e => (s.byEnv[e.id] || 0) > (+e.limit || 0)).length;
+  const overN = s.spendEnv.filter(e => (s.byEnv[e.id] || 0) > (+e.limit || 0)).length;
+  const unalloc = s.salary - s.budget - s.saveTarget;
   const paceTxt = cur === THIS ? `Day ${new Date().getDate()} of ${daysIn(cur)} · ${Math.round(frac * 100)}% of the month gone, ${Math.round(s.budget ? s.spent / s.budget * 100 : 0)}% of the budget spent` : cur < THIS ? 'Month closed' : 'Upcoming month';
   let html = approvalsHTML() + `<section class="summary">
-    <div class="left"><span class="label">Left in envelopes</span><span class="num ${left < 0 ? 'neg' : ''}">${fmt(left)}</span><span class="sub">${fmt(s.spent)} spent of ${fmt(s.budget)} budgeted</span></div>
+    <div class="left"><span class="label">Left to spend</span><span class="num ${left < 0 ? 'neg' : ''}">${fmt(left)}</span><span class="sub">${fmt(s.spent)} spent of ${fmt(s.budget)} budgeted for spending</span></div>
     <div><span class="meter ${s.spent > s.budget ? 'over' : ''}"><i style="width:${pct}%"></i>${frac > 0 && frac < 1 ? `<b class="pace" style="left:calc(${frac * 100}% - 1px)" title="Where spending would be at an even pace"></b>` : ''}</span>
-    <p class="pacenote">${paceTxt}</p>
-    <p class="pacenote">Emergency overrides used: ${overridesUsed(cur)} of ${rules().overridesPerMonth}</p></div>
+    <p class="pacenote">${paceTxt}</p></div>
     <dl class="facts">
       <div><dt>Salary</dt><dd>${fmt(s.salary)}</dd></div>
-      <div><dt>Not in envelopes</dt><dd class="${s.salary - s.budget < 0 ? 'neg' : ''}">${fmt(s.salary - s.budget)}</dd></div>
-      <div><dt>Salary left after spends</dt><dd class="${s.salary - s.spent < 0 ? 'neg' : ''}">${fmt(s.salary - s.spent)}</dd></div>
-      <div><dt>Envelopes over limit</dt><dd class="${overN ? 'neg' : ''}">${overN} of ${s.env.length}</dd></div>
+      <div><dt>Saved &amp; invested</dt><dd class="pos">${fmt(s.saved)} <small>of ${fmt(s.saveTarget)}</small></dd></div>
+      <div><dt>Not allocated</dt><dd class="${unalloc < 0 ? 'neg' : ''}">${fmt(unalloc)}</dd></div>
+      <div><dt>Salary left now</dt><dd class="${s.salary - s.total < 0 ? 'neg' : ''}">${fmt(s.salary - s.total)}</dd></div>
+      <div><dt>Envelopes over limit</dt><dd class="${overN ? 'neg' : ''}">${overN} of ${s.spendEnv.length}</dd></div>
+      <div><dt>Emergency overrides</dt><dd>${overridesUsed(cur)} of ${rules().overridesPerMonth}</dd></div>
     </dl>
     <button class="btn" data-act="edit" style="align-self:flex-start">Edit salary & envelopes</button>
   </section>
-  <section><div class="sechead"><h2>Envelopes</h2><span class="label">Tap one to log a spend</span></div><div class="envs">`;
-  for (const e of s.env) {
+  <section><div class="sechead"><h2>Spending</h2><span class="label">Tap one to log a spend</span></div><div class="envs">`;
+  for (const e of s.spendEnv) {
     const sp = s.byEnv[e.id] || 0, lim = +e.limit || 0, st = envStatus(e, sp, frac), w = lim ? Math.min(100, sp / lim * 100) : (sp ? 100 : 0);
     html += `<button class="env ${st.cls}" style="--c:${envColor(s, e)}" data-act="addto" data-env="${esc(e.id)}">
       <span class="name">${esc(e.name)} <span class="cap">(${fmt(lim)})</span></span>
@@ -254,7 +279,27 @@ function renderMonth() {
     </button>`;
   }
   if (s.unplanned > 0) html += `<div class="env over"><span class="name">Removed envelopes</span><span class="rest">${fmt(s.unplanned)}</span><span class="of">spent from envelopes no longer in this month's plan</span></div>`;
-  html += `</div></section>${ledgerHTML(s)}`;
+  html += `</div></section>`;
+
+  if (s.saveEnv.length) {
+    html += `<section><div class="sechead"><h2>Savings &amp; investments</h2><button class="link" data-act="funds">Opening balances</button></div><div class="envs">`;
+    for (const e of s.saveEnv) {
+      const sv = s.byEnv[e.id] || 0, tgt = +e.limit || 0, w = tgt ? Math.min(100, sv / tgt * 100) : (sv ? 100 : 0);
+      const ft = fundTotal(e), mkt = MARKET_RE.test(e.name), verb = mkt ? 'invested' : 'saved', done = tgt > 0 && sv >= tgt;
+      html += `<button class="env save${done ? ' done' : ''}" style="--c:${envColor(s, e)}" data-act="addto" data-env="${esc(e.id)}">
+        <span class="name">${esc(e.name)} <span class="cap">(${fmt(tgt)})</span></span>
+        <span class="of">${fmt(sv)} ${verb} out of ${fmt(tgt)}</span>
+        <span class="bal"><small>Still to ${mkt ? 'invest' : 'save'}:</small> ${fmt(Math.max(0, tgt - sv))}</span>
+        <span class="meter"><i style="width:${w}%"></i></span>
+        <span class="total"><small>${mkt ? 'Invested to date (not market value)' : 'Saved to date'}</small><b>${fmt(ft.total)}</b></span>
+        ${done ? `<span class="pill done">${sv > tgt ? 'Target reached +' + fmt(sv - tgt) : 'Target reached'}</span>` : ''}
+      </button>`;
+    }
+    html += `</div></section>`;
+  } else {
+    html += `<p class="quiet">Tip: mark chit funds, SIPs or RDs as <b>Save</b> in “Edit salary &amp; envelopes” to track them as savings, with a running total.</p>`;
+  }
+  html += ledgerHTML(s);
   main.innerHTML = html;
 }
 
@@ -322,7 +367,8 @@ function ledgerHTML(s) {
       const en = names[x.envelopeId] || x.envelopeName || 'Removed envelope', who = whoName(x.by);
       const title = x.note || x.payeeName || en;
       const meta = [title !== en ? en : '', x.payeeName && title !== x.payeeName ? x.payeeName : '', x.via === 'upi' ? 'UPI' : '', who ? 'by ' + who : ''].filter(Boolean).map(esc).join(' · ');
-      h += `<div class="tx"><div class="what"><div class="note">${esc(title)}${x.override ? ' <span class="pill warn">Override</span>' : ''}</div><div class="meta">${meta}${x.override && x.overrideReason ? '<br>Reason: ' + esc(x.overrideReason) : ''}</div></div>
+      const savingTx = isSave(s.env.find(v => v.id === x.envelopeId));
+      h += `<div class="tx"><div class="what"><div class="note">${esc(title)}${savingTx ? ' <span class="pill done">Saving</span>' : ''}${x.override ? ' <span class="pill warn">Override</span>' : ''}</div><div class="meta">${meta}${x.override && x.overrideReason ? '<br>Reason: ' + esc(x.overrideReason) : ''}</div></div>
         <span class="amt">${fmt(x.amount)}</span><button class="del ${armed === x.id ? 'arm' : ''}" data-act="del" data-id="${esc(x.id)}">${armed === x.id ? 'Confirm' : 'Delete'}</button></div>`;
     }
     h += '</div>';
@@ -341,14 +387,14 @@ function renderTrends() {
   const data = keys.map(k => ({ k, ...stats(k) }));
   const planned = data.filter(d => d.plan);
   const avgSpent = data.reduce((a, d) => a + d.spent, 0) / data.length;
-  const avgSaved = planned.length ? planned.reduce((a, d) => a + (d.salary - d.spent), 0) / planned.length : 0;
+  const avgSaved = data.reduce((a, d) => a + d.saved, 0) / data.length;
   const overMonths = planned.filter(d => d.spent > d.budget).length;
   const overBy = {};
-  for (const d of planned) for (const e of d.env) { const o = (d.byEnv[e.id] || 0) - (+e.limit || 0); if (o > 0) { const n = e.name.trim(); overBy[n] = (overBy[n] || 0) + o; } }
+  for (const d of planned) for (const e of d.spendEnv) { const o = (d.byEnv[e.id] || 0) - (+e.limit || 0); if (o > 0) { const n = e.name.trim(); overBy[n] = (overBy[n] || 0) + o; } }
   const worst = Object.entries(overBy).sort((a, b) => b[1] - a[1])[0];
   let h = `<div class="tiles">
     <div class="tile"><div class="label">Avg spent / month</div><div class="v">${fmt(avgSpent)}</div></div>
-    <div class="tile"><div class="label">Avg salary saved</div><div class="v ${avgSaved < 0 ? 'neg' : ''}">${fmt(avgSaved)}</div></div>
+    <div class="tile"><div class="label">Avg saved &amp; invested</div><div class="v pos">${fmt(avgSaved)}</div></div>
     <div class="tile"><div class="label">Months over budget</div><div class="v ${overMonths ? 'neg' : ''}">${overMonths} of ${planned.length}</div></div>
     <div class="tile"><div class="label">Most overspent</div><div class="v ${worst ? 'neg' : ''}" style="font-size:1rem">${worst ? esc(worst[0]) + '<br>' + fmt(worst[1]) : 'None yet'}</div></div>
   </div>
@@ -366,7 +412,7 @@ function renderTrends() {
         const e = d.env.find(x => x.name.trim().toLowerCase() === n.toLowerCase());
         if (!e) { h += '<td><small>—</small></td>'; continue; }
         const sp = d.byEnv[e.id] || 0; sum += sp; c++;
-        h += `<td class="${sp > (+e.limit || 0) ? 'o' : ''}">${fmt(sp)}<small>${fmt(e.limit)}</small></td>`;
+        h += `<td class="${!isSave(e) && sp > (+e.limit || 0) ? 'o' : ''}">${fmt(sp)}<small>${fmt(e.limit)}</small></td>`;
       }
       h += `<td>${fmt(c ? sum / c : 0)}</td></tr>`;
     }
@@ -415,7 +461,7 @@ function cumChart(el, k) {
 
 /* ---------- sheets ---------- */
 function openSheet(id) { $('#backdrop').hidden = false; $('#' + id).hidden = false; }
-function closeSheets() { stopScan(); $('#backdrop').hidden = true; for (const id of ['addSheet', 'planSheet', 'acctSheet', 'paySheet', 'confirmSheet']) $('#' + id).hidden = true; }
+function closeSheets() { stopScan(); $('#backdrop').hidden = true; for (const id of ['addSheet', 'planSheet', 'acctSheet', 'paySheet', 'confirmSheet', 'fundsSheet']) $('#' + id).hidden = true; }
 
 function openAdd(envId) {
   const s = stats(cur); if (!s.plan) return;
@@ -436,7 +482,9 @@ function envColor(s, e) { const i = s.env.indexOf(e); return ENV_COLORS[(i < 0 ?
 function envTiles(s, selected) {
   return s.env.map(e => {
     const left = (+e.limit || 0) - (s.byEnv[e.id] || 0), on = e.id === selected;
-    return `<button type="button" class="envtile${on ? ' on' : ''}${left < 0 ? ' neg' : ''}" style="--c:${envColor(s, e)}" data-pick="${esc(e.id)}" aria-pressed="${on}"><span class="n">${esc(e.name)}</span><span class="b">${left < 0 ? '−' + fmt(-left) + ' over' : fmt(left) + ' left'}</span></button>`;
+    const save = isSave(e);
+    const bal = save ? (left > 0 ? fmt(left) + ' to save' : 'Target reached') : (left < 0 ? '−' + fmt(-left) + ' over' : fmt(left) + ' left');
+    return `<button type="button" class="envtile${on ? ' on' : ''}${!save && left < 0 ? ' neg' : ''}${save ? ' save' : ''}" style="--c:${envColor(s, e)}" data-pick="${esc(e.id)}" aria-pressed="${on}"><span class="n">${esc(e.name)}</span><span class="b">${bal}</span></button>`;
   }).join('');
 }
 function renderPick(s) {
@@ -446,14 +494,22 @@ function renderPick(s) {
 function renderAddSummary() {
   const s = stats(cur), e = s.env.find(x => x.id === addEnv);
   if (!e) { $('#add-env-name').textContent = 'Pick an envelope'; $('#add-spent').textContent = '—'; $('#add-left').textContent = '—'; $('#add-after').hidden = true; return; }
-  const lim = +e.limit || 0, sp = s.byEnv[e.id] || 0, left = lim - sp, amt = parseFloat($('#add-amount').value) || 0;
+  const lim = +e.limit || 0, sp = s.byEnv[e.id] || 0, left = lim - sp, amt = parseFloat($('#add-amount').value) || 0, save = isSave(e);
   $('#add-env-name').textContent = `${e.name} (${fmt(lim)})`;
+  $('#add-spent-l').textContent = save ? 'Saved this month' : 'Already spent';
+  $('#add-left-l').textContent = save ? 'Still to save' : 'Left';
+  $('#add-amount-l').textContent = save ? 'Amount to save / invest now (₹)' : 'Amount to spend now (₹)';
   $('#add-spent').textContent = fmt(sp);
-  const l = $('#add-left'); l.textContent = left < 0 ? '−' + fmt(-left) : fmt(left); l.classList.toggle('neg', left < 0);
+  const l = $('#add-left'); l.textContent = save ? fmt(Math.max(0, left)) : (left < 0 ? '−' + fmt(-left) : fmt(left)); l.classList.toggle('neg', !save && left < 0);
   const after = left - amt, a = $('#add-after');
   a.hidden = !(amt > 0);
-  a.className = 'after' + (after < 0 ? ' neg' : '');
-  a.textContent = after < 0 ? `After this: ${fmt(-after)} over the limit` : `After this: ${fmt(after)} left`;
+  if (save) {
+    a.className = 'after';
+    a.textContent = after <= 0 ? `After this: target reached${after < 0 ? ', ' + fmt(-after) + ' extra saved' : ''}` : `After this: ${fmt(after)} still to save`;
+  } else {
+    a.className = 'after' + (after < 0 ? ' neg' : '');
+    a.textContent = after < 0 ? `After this: ${fmt(-after)} over the limit` : `After this: ${fmt(after)} left`;
+  }
 }
 $('#add-envs').addEventListener('click', ev => {
   const b = ev.target.closest('[data-pick]'); if (!b) return;
@@ -484,6 +540,7 @@ $('#add-save').addEventListener('click', () => {
     .catch(x => { console.error(x); toast('That spend could not be saved. Add it again.'); });
   closeSheets();
   const left = (+e.limit || 0) - ((s.byEnv[e.id] || 0) + amt);
+  if (isSave(e)) { toast(`${fmt(amt)} added to ${e.name}. ${left > 0 ? fmt(left) + ' still to save this month.' : 'Monthly target reached.'}`); return; }
   toast(left >= 0 ? `Saved. ${fmt(left)} left in ${e.name}`
     : partnerIds().length ? `Saved. ${e.name} is over by ${fmt(-left)}. To raise its limit, edit envelopes and ${partnerLabel()} will be asked.`
     : `Saved. ${e.name} is over by ${fmt(-left)}`);
@@ -496,24 +553,36 @@ function openPlan(mode, fromKey) {
   $('#plan-salary').value = planDraft.salary; $('#plan-err').hidden = true;
   const needsOk = !!months[cur] && partnerIds().length > 0;
   $('#plan-note').hidden = !needsOk; $('#f-reason').hidden = !needsOk; $('#plan-reason').value = '';
-  if (needsOk) $('#plan-note').textContent = `Raising a limit or adding an envelope needs ${partnerLabel()}’s approval. Lowering a limit or changing the salary applies straight away.`;
+  if (needsOk) $('#plan-note').textContent = `Raising a spending limit or adding a spending envelope needs ${partnerLabel()}’s approval. Savings targets, lower limits and the salary apply straight away.`;
   renderPlanRows(); openSheet('planSheet');
 }
 function renderPlanRows() {
-  $('#plan-rows').innerHTML = planDraft.envelopes.map((e, i) => `<div class="prow"><input id="pn-${e.id}" data-i="${i}" data-f="name" type="text" maxlength="40" value="${esc(e.name)}" placeholder="Envelope name" aria-label="Envelope name"><input id="pl-${e.id}" data-i="${i}" data-f="limit" type="number" inputmode="decimal" min="0" step="1" value="${esc(e.limit)}" placeholder="Limit" aria-label="Limit"><button type="button" data-rm="${i}" aria-label="Remove envelope">×</button></div>`).join('');
+  $('#plan-rows').innerHTML = planDraft.envelopes.map((e, i) => {
+    const save = isSave(e);
+    return `<div class="prow"><input id="pn-${e.id}" data-i="${i}" data-f="name" type="text" maxlength="40" value="${esc(e.name)}" placeholder="Envelope name" aria-label="Envelope name">
+      <input id="pl-${e.id}" data-i="${i}" data-f="limit" type="number" inputmode="decimal" min="0" step="1" value="${esc(e.limit)}" placeholder="${save ? 'Monthly target' : 'Limit'}" aria-label="${save ? 'Monthly target' : 'Limit'}">
+      <button type="button" class="typebtn${save ? ' save' : ''}" data-type="${i}" aria-pressed="${save}" title="Switch between spending and saving">${save ? 'Save' : 'Spend'}</button>
+      <button type="button" class="rm" data-rm="${i}" aria-label="Remove envelope">×</button></div>`;
+  }).join('');
   updateAlloc();
 }
 function updateAlloc() {
-  const sal = +$('#plan-salary').value || 0, tot = planDraft.envelopes.reduce((a, e) => a + (+e.limit || 0), 0), rem = sal - tot;
-  $('#plan-alloc').innerHTML = `Allocated <b>${fmt(tot)}</b> of <b>${fmt(sal)}</b> · ${rem >= 0 ? 'Unallocated' : 'Over-allocated by'} <b class="${rem < 0 ? 'neg' : ''}">${fmt(Math.abs(rem))}</b>`;
+  const sal = +$('#plan-salary').value || 0, sum = list => list.reduce((a, e) => a + (+e.limit || 0), 0);
+  const spend = sum(planDraft.envelopes.filter(e => !isSave(e))), save = sum(planDraft.envelopes.filter(isSave)), rem = sal - spend - save;
+  $('#plan-alloc').innerHTML = `Spending <b>${fmt(spend)}</b> · Saving <b class="pos">${fmt(save)}</b> of <b>${fmt(sal)}</b> · ${rem >= 0 ? 'Unallocated' : 'Over-allocated by'} <b class="${rem < 0 ? 'neg' : ''}">${fmt(Math.abs(rem))}</b>`;
 }
 $('#plan-rows').addEventListener('input', ev => { const t = ev.target; if (t.dataset.i == null) return; planDraft.envelopes[+t.dataset.i][t.dataset.f] = t.value; updateAlloc(); });
-$('#plan-rows').addEventListener('click', ev => { const b = ev.target.closest('[data-rm]'); if (!b) return; planDraft.envelopes.splice(+b.dataset.rm, 1); renderPlanRows(); });
+$('#plan-rows').addEventListener('click', ev => {
+  const rm = ev.target.closest('[data-rm]');
+  if (rm) { planDraft.envelopes.splice(+rm.dataset.rm, 1); renderPlanRows(); return; }
+  const tb = ev.target.closest('[data-type]');
+  if (tb) { const e = planDraft.envelopes[+tb.dataset.type]; e.type = isSave(e) ? 'spend' : 'save'; renderPlanRows(); }
+});
 $('#plan-salary').addEventListener('input', updateAlloc);
 $('#plan-addrow').addEventListener('click', () => { const e = { id: uid(), name: '', limit: '' }; planDraft.envelopes.push(e); renderPlanRows(); $('#pn-' + e.id).focus(); });
 $('#plan-save').addEventListener('click', () => {
   const fail = m => { const err = $('#plan-err'); err.textContent = m; err.hidden = false; };
-  const envs = planDraft.envelopes.map(e => ({ id: e.id, name: String(e.name).trim(), limit: Math.round(+e.limit || 0) })).filter(e => e.name || e.limit);
+  const envs = planDraft.envelopes.map(e => ({ id: e.id, name: String(e.name).trim(), limit: Math.round(+e.limit || 0), type: isSave(e) ? 'save' : 'spend' })).filter(e => e.name || e.limit);
   if (!envs.length) return fail('Add at least one envelope.');
   if (envs.some(e => !e.name)) return fail('Give every envelope a name.');
   const seen = new Set(); for (const e of envs) { const n = e.name.toLowerCase(); if (seen.has(n)) return fail(`“${e.name}” appears twice. Use different names.`); seen.add(n); }
@@ -531,7 +600,8 @@ $('#plan-save').addEventListener('click', () => {
   const changes = [];
   const applied = envs.map(e => {
     const from = prevById[e.id] ? (+prevById[e.id].limit || 0) : 0;
-    if (e.limit > from) { changes.push({ envelopeId: e.id, name: e.name, from, to: e.limit }); return { ...e, limit: from }; }
+    // Only spending increases need approval; raising a savings target applies at once.
+    if (e.limit > from && e.type !== 'save') { changes.push({ envelopeId: e.id, name: e.name, from, to: e.limit }); return { ...e, limit: from }; }
     return e;
   });
   const batch = writeBatch(fs);
@@ -705,14 +775,16 @@ function renderPay() {
     const left = (+chosen.limit || 0) - (s.byEnv[chosen.id] || 0);
     $('#pay-chosen-name').textContent = chosen.name;
     $('#pay-chosen').style.setProperty('--c', envColor(s, chosen));
-    const l = $('#pay-chosen-left'); l.textContent = left < 0 ? `${fmt(-left)} over` : `${fmt(left)} left`; l.classList.toggle('neg', left < 0);
+    const l = $('#pay-chosen-left');
+    if (isSave(chosen)) { l.textContent = left > 0 ? `${fmt(left)} still to save` : 'Monthly target reached'; l.classList.remove('neg'); }
+    else { l.textContent = left < 0 ? `${fmt(-left)} over` : `${fmt(left)} left`; l.classList.toggle('neg', left < 0); }
     $('#pay-why').textContent = pay.picked ? '' : why;
   }
   if (showList) $('#pay-envs').innerHTML = envTiles(s, pay.envId);
 
   const e = s.env.find(x => x.id === pay.envId), warn = $('#pay-warn');
   pay.needOverride = false; pay.blocked = false; warn.hidden = true; $('#f-pay-reason').hidden = true; $('#pay-raise').hidden = true;
-  if (e && amt > 0) {
+  if (e && amt > 0 && !isSave(e)) { // paying more into savings is never "overspending"
     const left = (+e.limit || 0) - (s.byEnv[e.id] || 0), over = amt - Math.max(left, 0);
     if (over > 0) {
       const remain = Math.max(0, r.overridesPerMonth - overridesUsed(cur));
@@ -812,6 +884,30 @@ function logPayment(p) {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(checkPending, 300); });
 
+/* ---------- savings opening balances ---------- */
+// One-time amounts already saved before using the app (e.g. chit instalments paid so far).
+function openFunds() {
+  const s = stats(cur);
+  $('#funds-rows').innerHTML = s.saveEnv.map(e => {
+    const ft = fundTotal(e);
+    return `<div class="field"><label for="fo-${esc(e.id)}">${esc(e.name)}: saved before using SpendWise (₹)</label>
+      <input id="fo-${esc(e.id)}" data-fund="${esc(e.id)}" data-name="${esc(e.name)}" type="number" inputmode="decimal" min="0" step="1" value="${ft.opening || ''}" placeholder="0">
+      <small class="quiet">Paid through the app so far: ${fmt(ft.contributed)}</small></div>`;
+  }).join('') || '<p class="quiet">No savings envelopes this month. Mark one as Save in “Edit salary &amp; envelopes” first.</p>';
+  msg($('#funds-msg'), ''); openSheet('fundsSheet');
+}
+$('#funds-save').addEventListener('click', () => {
+  const upd = {};
+  for (const i of document.querySelectorAll('#funds-rows [data-fund]')) {
+    const v = Math.round(+i.value || 0);
+    if (v < 0) return msg($('#funds-msg'), 'Amounts can’t be negative.');
+    upd['funds.' + i.dataset.fund] = { opening: v, name: i.dataset.name, updatedAt: Date.now(), by: me.uid };
+  }
+  if (!Object.keys(upd).length) { closeSheets(); return; }
+  updateDoc(hhRef(), upd).catch(x => { console.error(x); toast('Opening balances could not be saved. Try again.'); });
+  closeSheets(); toast('Opening balances saved');
+});
+
 /* ---------- account ---------- */
 $('#acctBtn').addEventListener('click', () => {
   $('#acctWho').textContent = myName() + ' · ' + (me.email || '');
@@ -838,6 +934,7 @@ $('#main').addEventListener('click', ev => {
   else if (a === 'copy') openPlan('copy', b.dataset.k);
   else if (a === 'fresh') openPlan('fresh');
   else if (a === 'edit') openPlan('edit');
+  else if (a === 'funds') openFunds();
   else if (a === 'filter') { filterEnv = b.dataset.env; render(); }
   else if (a === 'rq-approve') decideRequest(b.dataset.id, true);
   else if (a === 'rq-decline') decideRequest(b.dataset.id, false);

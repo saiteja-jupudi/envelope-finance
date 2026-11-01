@@ -111,12 +111,12 @@
     <div class="picked">
       <div class="picked-top"><h2 id="add-env-name">Envelope</h2><button type="button" id="add-change" class="link">Change</button></div>
       <div class="picked-stats">
-        <div><span>Already spent</span><b id="add-spent">₹0</b></div>
-        <div><span>Left</span><b id="add-left">₹0</b></div>
+        <div><span id="add-spent-l">Already spent</span><b id="add-spent">₹0</b></div>
+        <div><span id="add-left-l">Left</span><b id="add-left">₹0</b></div>
       </div>
     </div>
     <div class="field" id="f-add-envs"><label>Envelope</label><div id="add-envs" class="envpick"></div></div>
-    <div class="field"><label for="add-amount">Amount to spend now (₹)</label><input id="add-amount" class="amount" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
+    <div class="field"><label for="add-amount" id="add-amount-l">Amount to spend now (₹)</label><input id="add-amount" class="amount" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
     <p id="add-after" class="after" hidden></p>
     <div class="field"><label for="add-note">What is it for? (optional)</label><input id="add-note" type="text" maxlength="80" placeholder="e.g. Big Basket order"></div>
     <details class="more"><summary>Different date</summary><div class="field"><label for="add-date">Date</label><input id="add-date" type="date"></div></details>
@@ -191,6 +191,17 @@
     <p id="confirmSub" class="quiet"></p>
     <p class="quiet">Finish paying in your UPI app, then come back here.</p>
     <div class="row"><button id="confirmYes" class="btn primary">Yes, log it</button><button id="confirmNo" class="btn">No, it didn’t go through</button></div>
+  </div>
+</section>
+
+<section id="fundsSheet" class="sheet" hidden aria-label="Savings opening balances">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <h2>Savings opening balances</h2>
+    <p class="quiet">Enter what you had already saved in each one before you started using SpendWise, for example chit instalments paid so far. You only need to do this once. The total then grows with every payment you log.</p>
+    <div id="funds-rows" style="display:flex;flex-direction:column;gap:14px"></div>
+    <p id="funds-msg" class="err" hidden></p>
+    <div class="row"><button id="funds-save" class="btn primary">Save balances</button><button class="btn ghost" data-close>Cancel</button></div>
   </div>
 </section>
 
