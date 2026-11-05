@@ -40,3 +40,7 @@ pdf.js and SheetJS (in `vendor/`, Apache-2.0); nothing from the statement is upl
 transaction table, works out debits and credits from the running balance, spots the salary, sorts spends into
 categories, and suggests a monthly limit for each. Self-transfers and big one-off payments are kept out of the limits.
 Payee categories the user picks are remembered in localStorage on that phone only.
+
+Fixed monthly payments (same amount around the same date, 5+ months) become their own envelopes: rent, maintenance,
+loan EMIs, chits, gold schemes, SIPs. A chit paid to a different account in some months (or to a new account every month)
+is still matched by amount and date. The user can correct each one's kind; the choice is remembered on that phone.

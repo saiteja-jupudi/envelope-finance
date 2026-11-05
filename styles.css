@@ -333,3 +333,4 @@ details.stsec{border:1px solid var(--line);border-radius:10px;padding:10px 12px;
 details.stsec summary{font-weight:600;cursor:pointer}
 details.stsec[open] summary{margin-bottom:10px}
 .stfacts input{font-family:var(--f-mono);font-size:1rem;padding:4px 6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);width:100%}
+.sug select.kind{font-size:.78rem;padding:2px 4px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);margin-left:6px;vertical-align:1px;max-width:9.5rem}

@@ -1189,21 +1189,22 @@ function renderStmtTotal() {
   $('#st-use').disabled = !Object.values(stmt.sel).some(v => v.on && +v.limit > 0);
 }
 function renderStmtResult() {
-  const r = stmt.result, { ALL_CATS } = stmt.mod;
+  const r = stmt.result, { ALL_CATS, FIXED_KINDS } = stmt.mod;
   const days = Math.round((new Date(r.lastDate) - new Date(r.firstDate)) / 864e5) + 1;
   const short = r.months < 3;
   const otherIn = Math.max(0, r.incomeMonthly - r.salary);
   const sugHTML = r.suggestions.map(g => {
     const v = stmt.sel[g.key];
     const f = g.commitment, ord = n => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
-    const meta = f ? `${fmt(f.amount)} around the ${ord(f.day)} · ${f.months} months since ${label(f.since, true)}${f.ended ? ` · <b>stopped after ${label(f.last, true)}</b>` : ''}`
+    const meta = f ? `${fmt(f.amount)} around the ${ord(f.day)} · ${f.months} months since ${label(f.since, true)}${f.otherAccounts ? ` · paid to ${f.paidTo} different accounts` : ''}${f.ended ? ` · <b>stopped after ${label(f.last, true)}</b>` : ''}${f.guessed ? ' · <i>our guess, pick what it is</i>' : ''}`
       : g.key === 'oneoff' ? `${r.big.length} large payment${r.big.length === 1 ? '' : 's'} averaged over the year. Turn on to save for the next one.`
       : g.key === 'self' ? 'Money moved to your other accounts. Not spending. Turn on if it’s regular saving.'
       : g.regular ? `Usually ${fmt(g.typical)} a month · highest ${fmt(g.highest)}${g.key === 'card' ? ' · card spends are inside this bill' : ''}`
       : `Only in ${g.activeMonths} of ${r.months} months · averages ${fmt(g.average)} a month, so set aside each month`;
     return `<div class="sug${v.on ? '' : ' off'}" style="--c:${CAT_COLOR[g.key] || 'var(--accent)'}">
       <input type="checkbox" data-sk="${g.key}" data-sf="on" ${v.on ? 'checked' : ''} aria-label="Use ${esc(v.name)}">
-      <div style="min-width:0"><input class="nm" data-sk="${g.key}" data-sf="name" value="${esc(v.name)}" maxlength="40" aria-label="Envelope name"><button type="button" class="tag${v.type === 'save' ? ' save' : ''}" data-st="type" data-k="${esc(g.key)}" title="Switch between spending and saving">${v.type === 'save' ? 'Save' : 'Spend'}</button>${g.fixed ? '<span class="tag">Fixed</span>' : ''}</div>
+      <div style="min-width:0"><input class="nm" data-sk="${g.key}" data-sf="name" value="${esc(v.name)}" maxlength="40" aria-label="Envelope name">${f ? `<select class="kind" data-kind="${esc(f.cp)}" aria-label="What is this payment">${FIXED_KINDS.map(k => `<option ${k.kind === f.kind ? 'selected' : ''}>${esc(k.kind)}</option>`).join('')}<option value="__not">Not a fixed payment</option></select><span class="tag${v.type === 'save' ? ' save' : ''}">${v.type === 'save' ? 'Save' : 'Spend'}</span>`
+        : `<button type="button" class="tag${v.type === 'save' ? ' save' : ''}" data-st="type" data-k="${esc(g.key)}" title="Switch between spending and saving">${v.type === 'save' ? 'Save' : 'Spend'}</button>${g.fixed ? '<span class="tag">Fixed</span>' : ''}`}</div>
       <input class="lim" type="number" inputmode="numeric" min="0" step="100" data-sk="${g.key}" data-sf="limit" value="${v.limit}" aria-label="Monthly limit for ${esc(v.name)}">
       <div class="meta">${meta}</div></div>`;
   }).join('');
@@ -1222,7 +1223,7 @@ function renderStmtResult() {
       ${r.selfMonthly > 0 ? `<div><span class="label">To own accounts</span><b>${fmt(r.selfMonthly)}</b><small>A month, on average</small></div>` : ''}
     </div>
     <div class="row"><button class="btn small" data-st="trim">Trim spending limits by 10%</button></div>
-    <p class="quiet" style="margin:0;font-size:.85rem">Fixed payments (same amount every month) are listed first: loan EMIs, chits, schemes. Rename them and tap Spend/Save to correct the guess.</p>
+    <p class="quiet" style="margin:0;font-size:.85rem">Fixed payments come first: the same amount around the same date each month, such as rent, EMIs and chits. A chit paid to a different account in some months still counts. Pick what each one is if the guess is wrong.</p>
     <div class="sugs" id="st-sugs">${sugHTML}</div>
     <p class="sttotal alloc" id="st-total"></p>
     ${r.review.length ? `<details class="stsec"><summary>Sort out unclear payments (${r.review.length})</summary><p class="quiet" style="margin:0 0 8px;font-size:.85rem">Transfers to people and unknown shops. Pick what each one is for and the limits update. Your choices stay on this phone.</p><ul class="stlist">${reviewHTML}</ul></details>` : ''}
@@ -1244,7 +1245,15 @@ $('#st-result').addEventListener('input', ev => {
   renderStmtTotal();
 });
 $('#st-result').addEventListener('change', async ev => {
-  const t = ev.target; if (!t.dataset.learn) return;
+  const t = ev.target;
+  if (t.dataset.kind) {
+    // A fixed payment's kind sets its name and whether it is spending or saving; remembered on this phone.
+    const cp = t.dataset.kind, l = loadLearned();
+    l[cp] = t.value === '__not' ? 'skipfixed' : 'fixed:' + t.value; saveLearned(l);
+    delete stmt.sel['fixed:' + cp];
+    await runAnalysis(true); renderStmtResult(); return;
+  }
+  if (!t.dataset.learn) return;
   const l = loadLearned(); l[t.dataset.learn] = t.value; saveLearned(l);
   await runAnalysis(true); renderStmtResult();
   const d = $('#st-result details.stsec'); if (d) d.open = true;

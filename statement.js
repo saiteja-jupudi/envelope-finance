@@ -286,10 +286,19 @@ export const OTHER_CATS = [
   { key: 'oneoff', name: 'Big one-off payments', type: 'save' },
 ];
 export const ALL_CATS = [...CATEGORIES, ...OTHER_CATS];
+// What a fixed monthly payment can be. Saving kinds become savings envelopes.
+export const FIXED_KINDS = [
+  { kind: 'Rent', type: 'spend' }, { kind: 'Maintenance', type: 'spend' }, { kind: 'Loan EMI', type: 'spend' },
+  { kind: 'Chit', type: 'save' }, { kind: 'Gold scheme', type: 'save' }, { kind: 'SIP / savings', type: 'save' },
+  { kind: 'Insurance', type: 'spend' }, { kind: 'Fees', type: 'spend' }, { kind: 'Household help', type: 'spend' },
+  { kind: 'Family support', type: 'spend' }, { kind: 'Other fixed', type: 'spend' },
+];
+const kindType = k => (FIXED_KINDS.find(x => x.kind === k) || { type: 'spend' }).type;
+const INRf = n => '₹' + Math.round(n).toLocaleString('en-IN');
 
 export function categorise(t, learned = {}) {
   const cp = counterparty(t.desc);
-  if (learned[cp]) return learned[cp];
+  if (learned[cp] && ALL_CATS.some(c => c.key === learned[cp])) return learned[cp];
   const d = t.desc.toUpperCase();
   for (const c of CATEGORIES) if (c.re.test(d)) return c.key;
   if (/UPI\/P2A|IMPS|NEFT|RTGS|\bMMT\b|TRANSFER/.test(d)) return 'people';
@@ -344,35 +353,78 @@ export function analyse(txns, learned = {}, holders = []) {
   const hugeLine = salary ? salary * 2 : 200000;
   for (const t of out) if (t.amount >= bigLine && (cpMonths[t.cp].size < 3 || t.amount >= hugeLine) && !learned[t.cp] && !['rent', 'emi', 'savings', 'self', 'insurance', 'education'].includes(t.cat)) t.cat = 'oneoff';
 
-  // Fixed commitments: the same amount to the same payee in 5 or more months (loan EMIs, chits, gold schemes,
-  // rent, SIPs). Each becomes its own envelope instead of being mixed into a category.
-  const fixed = [];
+  // Fixed commitments: the same amount every month (loan EMIs, chits, rent, maintenance, schemes, SIPs).
+  // Each becomes its own envelope instead of being mixed into a category.
+  const fixed = [], ord = t => t.date.slice(0, 7);
+  const toPerson = t => /P2A|IMPS|NEFT|RTGS|MMT|INB/.test(t.desc.toUpperCase());
+  const dayDist = (a, b) => { const d = Math.abs(a - b); return Math.min(d, 31 - d); };
+  const free = t => !['self', 'oneoff'].includes(t.cat) && !String(t.cat).startsWith('fixed:');
+  const userKind = cp => String(learned[cp] || '').startsWith('fixed:') ? learned[cp].slice(6) : null;
+  const guessKind = (t, amt) => {
+    const d = t.desc.toUpperCase(), round = amt % 500 === 0;
+    if (t.cat === 'savings') return 'SIP / savings';
+    if (/JEWELL|GOLD/.test(d)) return 'Gold scheme';
+    if (t.cat === 'insurance') return 'Insurance';
+    if (t.cat === 'rent') return 'Rent';
+    if (t.cat === 'emi' || /ACH-DR|NACH|ECS/.test(d) || !round) return 'Loan EMI';
+    if (toPerson(t)) return amt <= 5000 ? 'Maintenance' : 'Chit';
+    return 'Other fixed';
+  };
+  const addFixed = (cp, amt, near, label) => {
+    const day = Math.round(median(near.map(t => +t.date.slice(8))));
+    const kind = userKind(cp) || guessKind(near[0], amt);
+    // Chit runners sometimes ask for the month's amount to go to another account: same amount, near the usual date.
+    const have = new Set(near.map(ord));
+    const span = monthsBetween(ord(near[0]), months[months.length - 1]);
+    const others = new Set();
+    const personRound = amt % 500 === 0 && near.every(toPerson);
+    for (const m of personRound ? span : []) {
+      if (have.has(m)) continue;
+      const alt = out.find(t => ord(t) === m && free(t) && t.cp !== cp && toPerson(t) && Math.abs(t.amount - amt) <= 1 && dayDist(+t.date.slice(8), day) <= 5);
+      if (alt) { near.push(alt); have.add(m); others.add(alt.cp); }
+    }
+    near.sort((a, b) => a.date.localeCompare(b.date));
+    const key = 'fixed:' + cp;
+    for (const t of near) t.cat = key;
+    const mlist = [...have].sort();
+    const allLast = sorted.filter(t => t.dir === 'out' && (t.cp || counterparty(t.desc)) === cp && Math.abs(t.amount - amt) <= amt * 0.5).pop();
+    const lastSeen = [allLast ? allLast.date : '', near[near.length - 1].date].sort().pop();
+    const ended = monthsBetween(lastSeen.slice(0, 7), last.slice(0, 7)).length > 2;
+    fixed.push({ key, cp, label, name: `${kind} · ${label}`, kind, guessed: !userKind(cp), type: kindType(kind), amount: amt, months: mlist.length,
+      since: mlist[0], last: mlist[mlist.length - 1], ended, day, otherAccounts: others.size, paidTo: [...new Set(near.map(t => t.cp))].length });
+  };
+  const titleCase = s => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+
+  // 1. Same payee, same amount in 5 or more months.
   const byPayeeOut = {};
-  for (const t of out) if (!['self', 'oneoff'].includes(t.cat)) (byPayeeOut[t.cp] = byPayeeOut[t.cp] || []).push(t);
+  for (const t of out) if (free(t)) (byPayeeOut[t.cp] = byPayeeOut[t.cp] || []).push(t);
+  const payeeCands = [];
   for (const [cp, l] of Object.entries(byPayeeOut)) {
-    if (learned[cp] && !String(learned[cp]).startsWith('fixed')) continue;
+    if (learned[cp] && !userKind(cp)) continue; // the user said this payee is not a fixed payment
     const counts = {};
-    for (const t of l) { const k = Math.round(t.amount); counts[k] = (counts[k] || new Set()).add(t.date.slice(0, 7)); }
+    for (const t of l) { const k = Math.round(t.amount); (counts[k] = counts[k] || new Set()).add(ord(t)); }
     const [amtS, mset] = Object.entries(counts).sort((a, b) => b[1].size - a[1].size)[0];
     const amt = +amtS;
     if (mset.size < 5 || amt < 1000) continue;
-    const near = l.filter(t => Math.abs(t.amount - amt) <= Math.max(1, amt * 0.02) || (t.amount % 500 === 0 && amt % 500 === 0 && t.amount <= amt * 1.5));
-    const mlist = [...new Set(near.map(t => t.date.slice(0, 7)))].sort();
-    const d = near[0].desc.toUpperCase(), round = amt % 500 === 0;
-    let kind, type;
-    if (['savings'].includes(near[0].cat)) { kind = 'Savings'; type = 'save'; }
-    else if (/JEWELL|GOLD/.test(d)) { kind = 'Gold scheme'; type = 'save'; }
-    else if (['emi'].includes(near[0].cat) || /ACH-DR|NACH|ECS/.test(d) || !round) { kind = 'Loan EMI'; type = 'spend'; }
-    else if (near[0].cat === 'rent') { kind = 'Rent'; type = 'spend'; }
-    else if (/P2A|IMPS|NEFT/.test(d)) { kind = 'Chit'; type = 'save'; }
-    else { kind = 'Fixed payment'; type = 'spend'; }
-    const allLast = sorted.filter(t => t.dir === 'out' && counterparty(t.desc) === cp && Math.abs(t.amount - amt) <= Math.max(1, amt * 0.5)).pop();
-    const lastM = mlist[mlist.length - 1], ended = monthsBetween((allLast ? allLast.date : lastM).slice(0, 7), last.slice(0, 7)).length > 2;
-    const days = near.map(t => +t.date.slice(8)); const day = median(days);
-    const key = 'fixed:' + cp;
-    for (const t of near) t.cat = key;
-    const title = cp.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-    fixed.push({ key, name: `${kind} · ${title}`, kind, type, cp, amount: amt, months: mlist.length, since: mlist[0], last: lastM, ended, day: Math.round(day) });
+    payeeCands.push({ cp, amt, near: l.filter(t => Math.abs(t.amount - amt) <= Math.max(1, amt * 0.02) || (t.amount % 500 === 0 && amt % 500 === 0 && t.amount > amt && t.amount <= amt * 1.5)) });
+  }
+  payeeCands.sort((a, b) => b.near.length - a.near.length);
+  for (const c of payeeCands) addFixed(c.cp, c.amt, c.near.filter(free), titleCase(c.cp));
+
+  // 2. Same amount around the same date every month, but to different accounts (chits collected by whoever won that month).
+  const byAmt = {};
+  for (const t of out) if (free(t) && toPerson(t) && t.amount >= 2000 && t.amount % 100 === 0) (byAmt[t.amount] = byAmt[t.amount] || []).push(t);
+  for (const [amtS, l] of Object.entries(byAmt)) {
+    if (new Set(l.map(ord)).size < 5) continue;
+    const day = median(l.map(t => +t.date.slice(8)));
+    const near = [], seenM = new Set();
+    for (const t of l) if (dayDist(+t.date.slice(8), day) <= 5 && !seenM.has(ord(t))) { near.push(t); seenM.add(ord(t)); }
+    if (near.length < 5 || new Set(near.map(t => t.cp)).size < 2) continue;
+    const span = monthsBetween(ord(near[0]), ord(near[near.length - 1])).length;
+    if (near.length / span < 0.6) continue;
+    const cp = 'AMT ' + amtS;
+    if (learned[cp] && !userKind(cp)) continue;
+    addFixed(cp, +amtS, near, `${INRf(+amtS)} to different accounts`);
   }
   fixed.sort((a, b) => (a.ended - b.ended) || b.amount - a.amount);
 
