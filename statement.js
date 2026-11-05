@@ -70,6 +70,17 @@ export async function linesFromPdf(pdf) {
   return lines;
 }
 
+/* ---------- account holder (to spot transfers to your own accounts) ---------- */
+export function holderFrom(textLines) {
+  for (const l of textLines.slice(0, 60)) {
+    const m = String(l).match(/\b(?:customer name|account name|a\/c name|name of (?:the )?customer|name)\s*[:\-]+\s*(?:mr\.?|mrs\.?|ms\.?)?\s*([A-Za-z][A-Za-z .]{2,60})/i);
+    if (m && !/joint|nominee|branch|bank/i.test(m[1])) return m[1].replace(/\s+/g, ' ').trim().toUpperCase();
+  }
+  return '';
+}
+// "SAITEJAJUPUDI", "JUPUDI SAITEJA" or just "SAITEJA" all count as the holder.
+const isHolder = (cp, holders) => { const c = cp.replace(/[^A-Z]/g, ''), words = cp.split(/\s+/); return holders.some(h => { const tk = h.split(/\s+/).filter(w => w.length >= 3); return tk.length >= 1 && (tk.every(w => c.includes(w)) || (words.length === 1 && tk.some(w => w.length >= 5 && w === words[0]))); }); };
+
 /* ---------- turn rows of cells into transactions ---------- */
 const SKIP_RE = /opening balance|closing balance|transaction total|page \d+ of|statement of account|^total\b|brought forward|carried forward/i;
 
@@ -251,6 +262,7 @@ export function counterparty(desc) {
 
 // Category rules, checked in order. `type` save = savings/investments.
 export const CATEGORIES = [
+  { key: 'cash', name: 'Cash withdrawals', type: 'spend', re: /^(ATM|ATM-CASH)|\b(ATM-CASH|ATM WDL|CASH ?WDL|CASH ?WITHDRAWAL|NWD|ATW|CDM)\b/ },
   { key: 'self', name: 'To my other accounts', type: 'save', re: /(SELFFT|SELF ?TRANSFER|SELF ?FT|TO ?SELF|OWN ?A\/?C|OWN ?ACCOUNT)/ },
   { key: 'savings', name: 'Savings & investments', type: 'save', re: /\b(SIP|MUTUAL ?FUND|MF\b|ZERODHA|GROWW|KUVERA|UPSTOX|ANGEL ?ONE|INDMONEY|ET ?MONEY|PAYTM ?MONEY|COIN BY|BSE STAR|ICCL|NSE CLEARING|CAMS|KFIN|NPS|PPF|RECURRING DEP|\bRD\b|FIXED DEP|\bFD\b|CHIT|CHITS|CHITTI|SAFEGOLD|AUGMONT|DIGITAL GOLD|SUKANYA)\b/ },
   { key: 'card', name: 'Credit card bills', type: 'spend', re: /\b(CRED\b|CRED CLUB|CREDIT ?CARD|CC ?PAYMENT|CARD ?PAYMENT|CCPAY|AUTOPAY CC|BILLDESK.*CARD|BHARAT ?CONNECT ?CRED)/ },
@@ -267,7 +279,6 @@ export const CATEGORIES = [
   { key: 'travel', name: 'Travel', type: 'spend', re: /\b(MAKEMYTRIP|GOIBIBO|CLEARTRIP|YATRA|IXIGO|EASEMYTRIP|INDIGO|INTERGLOBE|AIR ?INDIA|VISTARA|AKASA|SPICEJET|OYO|AIRBNB|TREEBO|FAB ?HOTELS|AGODA|BOOKING\.COM)\b/ },
   { key: 'education', name: 'Education', type: 'spend', re: /\b(SCHOOL|COLLEGE|UNIVERSITY|TUITION|FEES|BYJU|UNACADEMY|COURSERA|UDEMY|VEDANTU|PHYSICS ?WALLAH)\b/ },
   { key: 'shopping', name: 'Shopping', type: 'spend', re: /\b(AMAZON|AMZN|FLIPKART|MYNTRA|AJIO|MEESHO|NYKAA|TATA ?CLIQ|CROMA|RELIANCE ?DIGITAL|DECATHLON|IKEA|LIFESTYLE|MAX ?FASHION|PANTALOONS|WESTSIDE|ZUDIO|TRENDS|H ?& ?M|LENSKART|PEPPERFRY|URBAN ?LADDER|FIRSTCRY|SNAPDEAL|SHOPPERS ?STOP|JEWELL?ERS?|TEXTILES?|FOOTWEAR|GARMENTS?|BOUTIQUE|FASHION)\b/ },
-  { key: 'cash', name: 'Cash withdrawals', type: 'spend', re: /\b(ATM|CASH ?WDL|CASH ?WITHDRAWAL|NWD|ATW|CDM)\b/ },
 ];
 export const OTHER_CATS = [
   { key: 'people', name: 'Transfers to people', type: 'spend' },
@@ -289,7 +300,7 @@ export function categorise(t, learned = {}) {
 const roundUp = (v, step = 500) => v <= 0 ? 0 : Math.ceil(v / step) * step;
 const monthsBetween = (a, b) => { const out = []; let [y, m] = a.split('-').map(Number); const [y2, m2] = b.split('-').map(Number); while (y < y2 || (y === y2 && m <= m2)) { out.push(`${y}-${pad(m)}`); if (++m > 12) { m = 1; y++; } } return out; };
 
-export function analyse(txns, learned = {}) {
+export function analyse(txns, learned = {}, holders = []) {
   if (!txns.length) return null;
   const sorted = [...txns].sort((a, b) => a.date.localeCompare(b.date));
   const first = sorted[0].date, last = sorted[sorted.length - 1].date;
@@ -305,7 +316,7 @@ export function analyse(txns, learned = {}) {
   const inRange = new Set(months);
   const use = sorted.filter(t => inRange.has(t.date.slice(0, 7)));
   const out = use.filter(t => t.dir === 'out'), inc = use.filter(t => t.dir === 'in');
-  for (const t of out) { t.cp = counterparty(t.desc); t.cat = categorise(t, learned); }
+  for (const t of out) { t.cp = counterparty(t.desc); t.cat = categorise(t, learned); if (!learned[t.cp] && holders.length && isHolder(t.cp, holders)) t.cat = 'self'; }
   // Income: salary-like credits.
   const incByMonth = Object.fromEntries(months.map(m => [m, 0]));
   for (const t of inc) incByMonth[t.date.slice(0, 7)] += t.amount;
@@ -333,10 +344,42 @@ export function analyse(txns, learned = {}) {
   const hugeLine = salary ? salary * 2 : 200000;
   for (const t of out) if (t.amount >= bigLine && (cpMonths[t.cp].size < 3 || t.amount >= hugeLine) && !learned[t.cp] && !['rent', 'emi', 'savings', 'self', 'insurance', 'education'].includes(t.cat)) t.cat = 'oneoff';
 
+  // Fixed commitments: the same amount to the same payee in 5 or more months (loan EMIs, chits, gold schemes,
+  // rent, SIPs). Each becomes its own envelope instead of being mixed into a category.
+  const fixed = [];
+  const byPayeeOut = {};
+  for (const t of out) if (!['self', 'oneoff'].includes(t.cat)) (byPayeeOut[t.cp] = byPayeeOut[t.cp] || []).push(t);
+  for (const [cp, l] of Object.entries(byPayeeOut)) {
+    if (learned[cp] && !String(learned[cp]).startsWith('fixed')) continue;
+    const counts = {};
+    for (const t of l) { const k = Math.round(t.amount); counts[k] = (counts[k] || new Set()).add(t.date.slice(0, 7)); }
+    const [amtS, mset] = Object.entries(counts).sort((a, b) => b[1].size - a[1].size)[0];
+    const amt = +amtS;
+    if (mset.size < 5 || amt < 1000) continue;
+    const near = l.filter(t => Math.abs(t.amount - amt) <= Math.max(1, amt * 0.02) || (t.amount % 500 === 0 && amt % 500 === 0 && t.amount <= amt * 1.5));
+    const mlist = [...new Set(near.map(t => t.date.slice(0, 7)))].sort();
+    const d = near[0].desc.toUpperCase(), round = amt % 500 === 0;
+    let kind, type;
+    if (['savings'].includes(near[0].cat)) { kind = 'Savings'; type = 'save'; }
+    else if (/JEWELL|GOLD/.test(d)) { kind = 'Gold scheme'; type = 'save'; }
+    else if (['emi'].includes(near[0].cat) || /ACH-DR|NACH|ECS/.test(d) || !round) { kind = 'Loan EMI'; type = 'spend'; }
+    else if (near[0].cat === 'rent') { kind = 'Rent'; type = 'spend'; }
+    else if (/P2A|IMPS|NEFT/.test(d)) { kind = 'Chit'; type = 'save'; }
+    else { kind = 'Fixed payment'; type = 'spend'; }
+    const allLast = sorted.filter(t => t.dir === 'out' && counterparty(t.desc) === cp && Math.abs(t.amount - amt) <= Math.max(1, amt * 0.5)).pop();
+    const lastM = mlist[mlist.length - 1], ended = monthsBetween((allLast ? allLast.date : lastM).slice(0, 7), last.slice(0, 7)).length > 2;
+    const days = near.map(t => +t.date.slice(8)); const day = median(days);
+    const key = 'fixed:' + cp;
+    for (const t of near) t.cat = key;
+    const title = cp.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    fixed.push({ key, name: `${kind} · ${title}`, kind, type, cp, amount: amt, months: mlist.length, since: mlist[0], last: lastM, ended, day: Math.round(day) });
+  }
+  fixed.sort((a, b) => (a.ended - b.ended) || b.amount - a.amount);
+
   // Monthly totals per category (months with no spend count as zero).
   const cats = {};
   for (const c of ALL_CATS) cats[c.key] = { ...c, byMonth: Object.fromEntries(months.map(m => [m, 0])), total: 0, count: 0 };
-  for (const t of out) { const c = cats[t.cat]; c.byMonth[t.date.slice(0, 7)] += t.amount; c.total += t.amount; c.count++; }
+  for (const t of out) { const c = cats[t.cat]; if (!c) continue; c.byMonth[t.date.slice(0, 7)] += t.amount; c.total += t.amount; c.count++; }
 
   // Recurring payments: same payee in at least 3 months and most months of its span, similar amounts.
   const byCp = {};
@@ -355,7 +398,7 @@ export function analyse(txns, learned = {}) {
   const partialMonths = months.length < 3;
 
   // Suggestions: regular categories get a monthly limit; occasional ones get a monthly set-aside.
-  const suggestions = [];
+  const suggestions = fixed.map(f => ({ key: f.key, name: f.name, type: f.type, regular: true, fixed: true, commitment: f, typical: f.amount, average: f.amount, highest: f.amount, activeMonths: f.months, limit: Math.round(f.amount), off: f.ended }));
   for (const c of Object.values(cats)) {
     if (!c.total) continue;
     const vals = months.map(m => c.byMonth[m]), active = vals.filter(v => v > 0).length, share = active / months.length;
@@ -370,7 +413,7 @@ export function analyse(txns, learned = {}) {
       fixed: ['rent', 'emi', 'insurance', 'savings'].includes(c.key), off: ['self', 'oneoff'].includes(c.key),
     });
   }
-  suggestions.sort((a, b) => (a.type === b.type ? b.limit - a.limit : a.type === 'save' ? 1 : -1));
+  suggestions.sort((a, b) => (!!b.commitment - !!a.commitment) || (!!a.off - !!b.off) || (a.type === b.type ? b.limit - a.limit : a.type === 'save' ? 1 : -1));
 
   // Unclear payees worth a look (largest first).
   const review = Object.entries(byCp).filter(([, l]) => ['misc', 'people'].includes(l[0].cat))
@@ -417,7 +460,7 @@ function loadXlsx() {
 // Returns { txns } or throws an Error whose .code is 'password' / 'wrong-password' / 'empty'.
 export async function readStatement(file, password) {
   const name = file.name.toLowerCase(), buf = await file.arrayBuffer();
-  let txns;
+  let txns, holder = '';
   if (name.endsWith('.pdf') || file.type === 'application/pdf') {
     const lib = await loadPdf();
     let pdf;
@@ -429,13 +472,14 @@ export async function readStatement(file, password) {
     const lines = await linesFromPdf(pdf);
     pdf.destroy();
     txns = txnsFromLines(lines);
+    holder = holderFrom(lines.slice(0, 60).map(l => l.cells.join(' ')));
     if (!txns.length && lines.length < 5) { const err = new Error('This PDF has no readable text. It may be a scanned image. Download the statement again from net banking as a PDF or Excel file.'); err.code = 'empty'; throw err; }
   } else if (/\.(xlsx|xls|csv|txt)$/.test(name)) {
     const X = await loadXlsx();
     const wb = name.endsWith('.csv') || name.endsWith('.txt') ? X.read(new TextDecoder().decode(buf), { type: 'string', cellDates: true }) : X.read(buf, { type: 'array', cellDates: true, password: password || undefined });
     txns = [];
-    for (const sn of wb.SheetNames) { txns = txns.concat(txnsFromTable(X.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: '' }))); }
+    for (const sn of wb.SheetNames) { const rows = X.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: false, defval: '' }); holder = holder || holderFrom(rows.slice(0, 60).map(r => r.join(' '))); txns = txns.concat(txnsFromTable(X.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: '' }))); }
   } else throw new Error('Use a PDF, Excel or CSV statement.');
   if (!txns.length) { const err = new Error('No transactions were found in this file. Try the Excel version of the statement from net banking.'); err.code = 'empty'; throw err; }
-  return { txns };
+  return { txns, holder };
 }

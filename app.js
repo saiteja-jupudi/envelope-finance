@@ -1137,7 +1137,7 @@ async function readOne(f, password) {
   f.status = 'reading'; renderStmtFiles();
   try {
     const { readStatement } = await stmtMod();
-    f.txns = (await readStatement(f.file, password)).txns; f.status = 'ok'; f.file = null;
+    const res = await readStatement(f.file, password); f.txns = res.txns; f.holder = res.holder; f.status = 'ok'; f.file = null;
   } catch (e) {
     if (e.code === 'password' || e.code === 'wrong-password') { f.status = 'password'; f.wrong = e.code === 'wrong-password'; }
     else { f.status = 'bad'; f.err = e.message || 'Could not read this file.'; console.error(e); }
@@ -1160,12 +1160,13 @@ $('#st-pass').addEventListener('keydown', e => { if (e.key === 'Enter') $('#st-p
 async function runAnalysis(keepSel) {
   const { mergeTxns, analyse } = await stmtMod();
   const txns = mergeTxns(stmt.files.filter(f => f.status === 'ok').map(f => f.txns.map(t => ({ ...t }))));
-  const r = analyse(txns, loadLearned());
+  const holders = [...new Set(stmt.files.map(f => f.holder).filter(Boolean))];
+  const r = analyse(txns, loadLearned(), holders);
   if (!r) { msg($('#st-err'), 'No spending was found in these files.'); return false; }
   const old = stmt.sel; stmt.sel = {};
   for (const g of r.suggestions) {
     const o = keepSel && old[g.key];
-    stmt.sel[g.key] = { on: o ? o.on : !g.off, name: o ? o.name : g.name, limit: o && o.edited ? o.limit : g.limit, edited: !!(o && o.edited), type: g.type };
+    stmt.sel[g.key] = { on: o ? o.on : !g.off, name: o ? o.name : g.name, limit: o && o.edited ? o.limit : g.limit, edited: !!(o && o.edited), type: o ? o.type : g.type };
   }
   if (!keepSel || !stmt.salary) stmt.salary = r.salary;
   stmt.result = r; return true;
@@ -1194,13 +1195,15 @@ function renderStmtResult() {
   const otherIn = Math.max(0, r.incomeMonthly - r.salary);
   const sugHTML = r.suggestions.map(g => {
     const v = stmt.sel[g.key];
-    const meta = g.key === 'oneoff' ? `${r.big.length} large payment${r.big.length === 1 ? '' : 's'} averaged over the year. Turn on to save for the next one.`
+    const f = g.commitment, ord = n => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
+    const meta = f ? `${fmt(f.amount)} around the ${ord(f.day)} · ${f.months} months since ${label(f.since, true)}${f.ended ? ` · <b>stopped after ${label(f.last, true)}</b>` : ''}`
+      : g.key === 'oneoff' ? `${r.big.length} large payment${r.big.length === 1 ? '' : 's'} averaged over the year. Turn on to save for the next one.`
       : g.key === 'self' ? 'Money moved to your other accounts. Not spending. Turn on if it’s regular saving.'
       : g.regular ? `Usually ${fmt(g.typical)} a month · highest ${fmt(g.highest)}${g.key === 'card' ? ' · card spends are inside this bill' : ''}`
       : `Only in ${g.activeMonths} of ${r.months} months · averages ${fmt(g.average)} a month, so set aside each month`;
     return `<div class="sug${v.on ? '' : ' off'}" style="--c:${CAT_COLOR[g.key] || 'var(--accent)'}">
       <input type="checkbox" data-sk="${g.key}" data-sf="on" ${v.on ? 'checked' : ''} aria-label="Use ${esc(v.name)}">
-      <div style="min-width:0"><input class="nm" data-sk="${g.key}" data-sf="name" value="${esc(v.name)}" maxlength="40" aria-label="Envelope name">${g.type === 'save' ? '<span class="tag save">Save</span>' : g.fixed ? '<span class="tag">Fixed</span>' : ''}</div>
+      <div style="min-width:0"><input class="nm" data-sk="${g.key}" data-sf="name" value="${esc(v.name)}" maxlength="40" aria-label="Envelope name"><button type="button" class="tag${v.type === 'save' ? ' save' : ''}" data-st="type" data-k="${esc(g.key)}" title="Switch between spending and saving">${v.type === 'save' ? 'Save' : 'Spend'}</button>${g.fixed ? '<span class="tag">Fixed</span>' : ''}</div>
       <input class="lim" type="number" inputmode="numeric" min="0" step="100" data-sk="${g.key}" data-sf="limit" value="${v.limit}" aria-label="Monthly limit for ${esc(v.name)}">
       <div class="meta">${meta}</div></div>`;
   }).join('');
@@ -1219,6 +1222,7 @@ function renderStmtResult() {
       ${r.selfMonthly > 0 ? `<div><span class="label">To own accounts</span><b>${fmt(r.selfMonthly)}</b><small>A month, on average</small></div>` : ''}
     </div>
     <div class="row"><button class="btn small" data-st="trim">Trim spending limits by 10%</button></div>
+    <p class="quiet" style="margin:0;font-size:.85rem">Fixed payments (same amount every month) are listed first: loan EMIs, chits, schemes. Rename them and tap Spend/Save to correct the guess.</p>
     <div class="sugs" id="st-sugs">${sugHTML}</div>
     <p class="sttotal alloc" id="st-total"></p>
     ${r.review.length ? `<details class="stsec"><summary>Sort out unclear payments (${r.review.length})</summary><p class="quiet" style="margin:0 0 8px;font-size:.85rem">Transfers to people and unknown shops. Pick what each one is for and the limits update. Your choices stay on this phone.</p><ul class="stlist">${reviewHTML}</ul></details>` : ''}
@@ -1250,6 +1254,7 @@ $('#st-result').addEventListener('click', ev => {
   if (ev.target.id === 'st-use') { useSuggestions(); return; }
   const b = ev.target.closest('[data-st]'); if (!b) return;
   const a = b.dataset.st;
+  if (a === 'type') { const v = stmt.sel[b.dataset.k]; v.type = v.type === 'save' ? 'spend' : 'save'; renderStmtResult(); return; }
   if (a === 'more') { $('#st-result').hidden = true; $('#st-pick').hidden = false; renderStmtFiles(); $('#stmtSheet').scrollTop = 0; }
   else if (a === 'trim') {
     for (const g of stmt.result.suggestions) { const v = stmt.sel[g.key]; if (g.type === 'spend' && !g.fixed && v.on) { v.limit = Math.round(v.limit * 0.9 / 100) * 100; v.edited = true; } }
