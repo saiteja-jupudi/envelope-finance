@@ -88,7 +88,7 @@ $('#authForm').addEventListener('submit', async e => {
   try {
     if (authMode === 'signin') await signInWithEmailAndPassword(auth, email, pass);
     else if (authMode === 'signup') {
-      if (!name) { msg(m, 'Enter your name so your partner sees who logged a spend.'); return; }
+      if (!name) { msg(m, 'Enter your name. It’s shown on the spends you log.'); return; }
       const cred = await createUserWithEmailAndPassword(auth, email, pass);
       await updateProfile(cred.user, { displayName: name });
       await setDoc(doc(fs, 'users', cred.user.uid), { name, email }, { merge: true });
@@ -108,7 +108,7 @@ $('#createHH').addEventListener('click', async () => {
   try {
     const ref = doc(collection(fs, 'households')), code = newCode(), name = myName();
     const batch = writeBatch(fs);
-    batch.set(ref, { name: 'Our home', inviteCode: code, createdBy: me.uid, members: [me.uid], memberNames: { [me.uid]: name }, createdAt: serverTimestamp() });
+    batch.set(ref, { name: 'My budget', inviteCode: code, createdBy: me.uid, members: [me.uid], memberNames: { [me.uid]: name }, createdAt: serverTimestamp() });
     batch.set(doc(fs, 'invites', code), { householdId: ref.id, createdBy: me.uid });
     batch.set(doc(fs, 'users', me.uid), { householdId: ref.id, name }, { merge: true });
     await batch.commit();
@@ -123,13 +123,13 @@ $('#joinHH').addEventListener('click', async () => {
   b.disabled = true; msg(m, '');
   try {
     const inv = await getDoc(doc(fs, 'invites', code));
-    if (!inv.exists()) { msg(m, 'No household has that code. Check it with your partner.'); return; }
+    if (!inv.exists()) { msg(m, 'No budget has that code. Check the code and try again.'); return; }
     const id = inv.data().householdId, name = myName();
     await updateDoc(doc(fs, 'households', id), { members: arrayUnion(me.uid), ['memberNames.' + me.uid]: name, joinCode: code });
     await setDoc(doc(fs, 'users', me.uid), { householdId: id, name }, { merge: true });
     openHousehold(id);
     setTimeout(() => toast('You joined the household.'), 400);
-  } catch (err) { msg(m, 'Could not join. The household may already have 4 members, or the connection dropped.'); console.error(err); }
+  } catch (err) { msg(m, 'Could not join. The budget may already have 4 members, or the connection dropped.'); console.error(err); }
   finally { b.disabled = false; }
 });
 $('#onboardOut').addEventListener('click', () => signOut(auth));
@@ -239,14 +239,14 @@ function envStatus(e, spent, frac) {
 
 function renderMonth() {
   const main = $('#main');
-  if (!(loadedM && loadedT)) { main.innerHTML = `<div class="empty"><h2>Opening your envelopes</h2><p>This month's salary, envelope limits and every spend you both log will appear here.</p></div>`; return; }
+  if (!(loadedM && loadedT)) { main.innerHTML = `<div class="empty"><h2>Opening your envelopes</h2><p>This month's salary, envelope limits and every logged spend will appear here.</p></div>`; return; }
   const s = stats(cur);
   if (!s.plan) {
     const prev = prevPlanKey(cur);
     main.innerHTML = approvalsHTML() + `<div class="empty"><h2>No envelopes for ${label(cur)} yet</h2>
-      <p>When salary comes in, enter it and set a limit for each envelope. Then log each spend against an envelope, and the balance updates on both phones.</p>
+      <p>When salary comes in, enter it and set a limit for each envelope. Then log each spend against an envelope and the balances update straight away${partnerIds().length ? ' on every phone sharing this budget' : ''}.</p>
       <div class="row">${prev ? `<button class="btn primary" data-act="copy" data-k="${prev}">Copy ${label(prev, true)} envelopes</button>` : ''}<button class="btn ${prev ? '' : 'primary'}" data-act="fresh">${prev ? 'Start from scratch' : 'Set up envelopes'}</button></div>
-      <button class="link" data-act="stmt">Not sure how much to put in each? Get suggestions from your bank statement</button>
+      <button class="link" data-act="stmt">Not sure how much to put in each? Get suggestions from a bank statement</button>
     </div>${s.t.length ? ledgerHTML(s) : ''}`;
     return;
   }
@@ -417,7 +417,7 @@ function ledgerHTML(s) {
       const meta = [title !== en ? en : '', x.payeeName && title !== x.payeeName ? x.payeeName : '', x.via === 'upi' ? 'UPI' : '', who ? 'by ' + who : ''].filter(Boolean).map(esc).join(' · ');
       const savingTx = isSave(s.env.find(v => v.id === x.envelopeId));
       const pendingEdit = requests.some(r => r.status === 'pending' && r.changes.some(c => c.kind === 'txn' && c.txnId === x.id));
-      h += `<div class="tx"><div class="what"><div class="note">${esc(title)}${savingTx ? ' <span class="pill done">Saving</span>' : ''}${x.override ? ' <span class="pill warn">Override</span>' : ''}${pendingEdit ? ' <span class="pill warn">Change pending</span>' : ''}</div><div class="meta">${meta}${x.editedAt ? ' · edited' : ''}${x.override && x.overrideReason ? '<br>Reason: ' + esc(x.overrideReason) : ''}</div></div>
+      h += `<div class="tx"><div class="what"><div class="note">${esc(title)}${savingTx ? ' <span class="pill done">Saving</span>' : ''}${x.override ? ' <span class="pill warn">Override</span>' : ''}${x.breach ? ' <span class="pill over">Limit broken</span>' : ''}${pendingEdit ? ' <span class="pill warn">Change pending</span>' : ''}</div><div class="meta">${meta}${x.editedAt ? ' · edited' : ''}${(x.override || x.breach) && x.overrideReason ? '<br>Reason: ' + esc(x.overrideReason) : ''}</div></div>
         <span class="amt">${fmt(x.amount)}</span><button class="del" data-act="edit-tx" data-id="${esc(x.id)}">Edit</button></div>`;
     }
     h += '</div>';
@@ -518,7 +518,7 @@ function openAdd(envId) {
   const N = daysIn(cur), t = todayISO(), d = $('#add-date');
   d.min = cur + '-01'; d.max = cur + '-' + pad(N);
   d.value = t.startsWith(cur) ? t : (cur < THIS ? cur + '-' + pad(N) : cur + '-01');
-  $('#add-amount').value = ''; $('#add-note').value = ''; $('#add-err').hidden = true; $('#add-past').checked = false;
+  $('#add-amount').value = ''; $('#add-note').value = ''; $('#add-err').hidden = true; $('#add-past').checked = false; $('#add-reason').value = '';
   // Opened from an envelope tile: show just that envelope. From "+ Log spend": show the list.
   $('#f-add-envs').hidden = !!envId;
   renderPick(s); openSheet('addSheet'); setTimeout(() => $('#add-amount').focus(), 60);
@@ -539,8 +539,14 @@ function renderPick(s) {
   $('#add-envs').innerHTML = envTiles(s, addEnv);
   renderAddSummary();
 }
+// How a spend that goes over an envelope's limit is treated: an emergency override if one is left and it's within the cap.
+function overInfo(e, amt, s) {
+  const over = amt - Math.max((+e.limit || 0) - (s.byEnv[e.id] || 0), 0), left = overridesLeft(cur);
+  return { over, left, canOverride: over > 0 && left > 0 && over <= rules().overrideCap };
+}
 function renderAddSummary() {
   const s = stats(cur), e = s.env.find(x => x.id === addEnv);
+  $('#f-add-reason').hidden = true;
   if (!e) { $('#add-env-name').textContent = 'Pick an envelope'; $('#add-spent').textContent = '—'; $('#add-left').textContent = '—'; $('#add-after').hidden = true; $('#f-add-past').hidden = true; $('#add-pay').hidden = cur !== THIS; $('#add-save').textContent = 'Already paid, just log it'; $('#add-date-more').hidden = false; return; }
   const lim = +e.limit || 0, sp = s.byEnv[e.id] || 0, left = lim - sp, amt = parseFloat($('#add-amount').value) || 0, save = isSave(e);
   // Savings envelopes can record money saved before this month; that never touches this month's salary.
@@ -568,8 +574,10 @@ function renderAddSummary() {
     a.textContent = after <= 0 ? `After this: target reached${after < 0 ? ', ' + fmt(-after) + ' extra saved' : ''}` : `After this: ${fmt(after)} still to save`;
   } else {
     a.className = 'after' + (after < 0 ? ' neg' : '');
-    a.textContent = after < 0 ? `After this: ${fmt(-after)} over the limit` : `After this: ${fmt(after)} left`;
+    const ov = overInfo(e, amt, s);
+    a.textContent = after < 0 ? `After this: ${fmt(-after)} over the limit. ${ov.canOverride ? `This uses an emergency override (${ov.left} left this month).` : ov.left ? `That’s more than the ${fmt(rules().overrideCap)} override limit, so it will be logged as a broken limit.` : 'No emergency overrides are left this month, so it will be logged as a broken limit.'}` : `After this: ${fmt(after)} left`;
   }
+  $('#f-add-reason').hidden = save || past || !(amt > 0) || after >= 0;
 }
 $('#add-envs').addEventListener('click', ev => {
   const b = ev.target.closest('[data-pick]'); if (!b) return;
@@ -604,15 +612,18 @@ $('#add-save').addEventListener('click', () => {
     closeSheets(); toast(`${fmt(amt)} added to ${e.name}’s saved-to-date total. This month is unchanged.`); return;
   }
   if (!date || !date.startsWith(cur)) return fail('Pick a date in ' + label(cur) + '.');
+  const ov = !isSave(e) ? overInfo(e, amt, s) : { over: 0 }, reason = $('#add-reason').value.trim();
+  if (ov.over > 0 && !reason) return fail('Add a reason for going over the limit.');
+  const extra = ov.over > 0 ? (ov.canOverride ? { override: true, overrideReason: reason } : { breach: true, overrideReason: reason }) : {};
   // Not awaited: Firestore applies the write locally at once and syncs when online.
-  setDoc(doc(collection(fs, 'households', hid, 'txns')), { month: cur, envelopeId: e.id, envelopeName: e.name, amount: Math.round(amt * 100) / 100, note: $('#add-note').value.trim(), date, by: me.uid, at: Date.now() })
+  setDoc(doc(collection(fs, 'households', hid, 'txns')), { month: cur, envelopeId: e.id, envelopeName: e.name, amount: Math.round(amt * 100) / 100, note: $('#add-note').value.trim(), date, by: me.uid, at: Date.now(), ...extra })
     .catch(x => { console.error(x); toast('That spend could not be saved. Add it again.'); });
   closeSheets();
   const left = (+e.limit || 0) - ((s.byEnv[e.id] || 0) + amt);
   if (isSave(e)) { toast(`${fmt(amt)} added to ${e.name}. ${left > 0 ? fmt(left) + ' still to save this month.' : 'Monthly target reached.'}`); return; }
   toast(left >= 0 ? `Saved. ${fmt(left)} left in ${e.name}`
-    : partnerIds().length ? `Saved. ${e.name} is over by ${fmt(-left)}. To raise its limit, edit envelopes and ${partnerLabel()} will be asked.`
-    : `Saved. ${e.name} is over by ${fmt(-left)}`);
+    : extra.override ? `Logged with an emergency override. ${e.name} is over by ${fmt(-left)}.`
+    : `Logged as a broken limit. ${e.name} is over by ${fmt(-left)}.`);
 });
 
 function openPlan(mode, fromKey) {
@@ -620,9 +631,11 @@ function openPlan(mode, fromKey) {
   planDraft = { salary: base ? base.salary : '', envelopes: base ? base.envelopes.map(e => ({ ...e })) : DEFAULTS.map(n => ({ id: uid(), name: n, limit: '' })) };
   $('#planTitle').textContent = (mode === 'edit' ? 'Edit ' : 'Set up ') + label(cur) + ' envelopes';
   $('#plan-salary').value = planDraft.salary; $('#plan-err').hidden = true;
-  const needsOk = !!months[cur] && partnerIds().length > 0;
-  $('#plan-note').hidden = !needsOk; $('#f-reason').hidden = !needsOk; $('#plan-reason').value = '';
+  const needsOk = !!months[cur] && partnerIds().length > 0, soloGuard = !!months[cur] && !partnerIds().length && cur <= THIS;
+  $('#plan-note').hidden = !(needsOk || soloGuard); $('#f-reason').hidden = !(needsOk || soloGuard); $('#plan-reason').value = '';
+  $('#plan-reason-l').textContent = needsOk ? `Reason for the increase (${partnerLabel()} sees this)` : 'Reason, if this raises your total spending budget';
   if (needsOk) $('#plan-note').textContent = `Raising a spending limit or adding a spending envelope needs ${partnerLabel()}’s approval. Savings targets, lower limits and the salary apply straight away.`;
+  if (soloGuard) $('#plan-note').textContent = `Moving money between envelopes is always allowed. Raising your total spending budget mid-month uses one emergency override (${overridesLeft(cur)} left this month, up to ${fmt(rules().overrideCap)}). Savings targets and the salary apply straight away.`;
   renderPlanRows(); openSheet('planSheet');
 }
 function renderPlanRows() {
@@ -659,10 +672,26 @@ $('#plan-save').addEventListener('click', () => {
   const monthRef = doc(fs, 'households', hid, 'months', cur);
   const saveFail = x => { console.error(x); toast('Envelopes could not be saved. Try again.'); };
 
-  // First plan of the month, or nobody to ask: applies at once.
-  if (!prev || !partnerIds().length) {
-    setDoc(monthRef, { salary, envelopes: envs, updatedAt: Date.now(), by: me.uid }).catch(saveFail);
+  const lo = (prev && prev.limitOverrides) || [];
+  // First plan of the month, or a future month: applies at once.
+  if (!prev || (!partnerIds().length && cur > THIS)) {
+    setDoc(monthRef, { salary, envelopes: envs, limitOverrides: lo, updatedAt: Date.now(), by: me.uid }).catch(saveFail);
     closeSheets(); toast('Envelopes saved for ' + label(cur, true)); return;
+  }
+  // Solo budget, current or past month: moving money between envelopes is free; raising the total spending budget uses one override.
+  if (!partnerIds().length) {
+    const spendSum = list => list.filter(e => e.type !== 'save' && !isSave(e)).reduce((a, e) => a + (+e.limit || 0), 0);
+    const before = spendSum(prev.envelopes), after = spendSum(envs), rise = after - before;
+    let newLo = lo;
+    if (rise > 0) {
+      const r = rules(), left = overridesLeft(cur), reason = $('#plan-reason').value.trim();
+      if (!left) return fail(`This raises your spending budget by ${fmt(rise)}, and no emergency overrides are left this month. Lower another envelope by the same amount instead.`);
+      if (rise > r.overrideCap) return fail(`This raises your spending budget by ${fmt(rise)}, more than the ${fmt(r.overrideCap)} an override allows. Lower another envelope to make up the difference.`);
+      if (!reason) return fail('Add a reason for raising your spending budget.');
+      newLo = [...lo, { from: before, to: after, reason, by: me.uid, at: Date.now() }];
+    }
+    setDoc(monthRef, { salary, envelopes: envs, limitOverrides: newLo, updatedAt: Date.now(), by: me.uid }).catch(saveFail);
+    closeSheets(); toast(rise > 0 ? `Saved. Spending budget raised by ${fmt(rise)} using an emergency override.` : 'Envelopes saved for ' + label(cur, true)); return;
   }
   // Increases become a request; everything else applies now.
   const prevById = Object.fromEntries(prev.envelopes.map(e => [e.id, e]));
@@ -674,7 +703,7 @@ $('#plan-save').addEventListener('click', () => {
     return e;
   });
   const batch = writeBatch(fs);
-  batch.set(monthRef, { salary, envelopes: applied, updatedAt: Date.now(), by: me.uid });
+  batch.set(monthRef, { salary, envelopes: applied, limitOverrides: lo, updatedAt: Date.now(), by: me.uid });
   if (changes.length) batch.set(doc(collection(fs, 'households', hid, 'requests')), {
     month: cur, changes, reason: $('#plan-reason').value.trim(), status: 'pending', requestedBy: me.uid, requestedAt: Date.now()
   });
@@ -687,17 +716,26 @@ $('#plan-save').addEventListener('click', () => {
 
 /* ---------- household rules ---------- */
 const DEFAULT_RULES = { miscThreshold: 500, overridesPerMonth: 2, overrideCap: 5000, fdRate: 6.25 };
-const rules = () => ({ ...DEFAULT_RULES, ...((household && household.rules) || {}) });
+// A solo user's increase to the override rules waits until next month (rulesNext), so it can't be used to escape this month's limits.
+const rules = () => {
+  const base = { ...DEFAULT_RULES, ...((household && household.rules) || {}) }, nx = household && household.rulesNext;
+  if (nx && nx.from && THIS >= nx.from) { for (const k of ['overridesPerMonth', 'overrideCap']) if (nx[k] != null) base[k] = nx[k]; }
+  return base;
+};
 const RULE_NAMES = { overridesPerMonth: 'Emergency overrides per month', overrideCap: 'Largest single override' };
 function fmtRule(c, v) { return c.kind === 'rule' && c.key === 'overridesPerMonth' ? String(v) : fmt(v); }
-const overridesUsed = k => txns.filter(x => x.month === k && x.override).length;
+// Overrides used in a month: over-limit spends plus mid-month limit raises (solo budgets).
+const overridesUsed = k => txns.filter(x => x.month === k && x.override).length + ((months[k] && months[k].limitOverrides) || []).length;
+const overridesLeft = k => Math.max(0, rules().overridesPerMonth - overridesUsed(k));
 
 function fillRules() {
   const r = rules();
   $('#r-misc').value = r.miscThreshold; $('#r-ovr').value = r.overridesPerMonth; $('#r-cap').value = r.overrideCap; $('#r-fd').value = r.fdRate;
   $('#rulesNote').textContent = partnerIds().length
     ? `Raising the number or size of overrides needs ${partnerLabel()}’s approval. Lowering them applies at once.`
-    : 'Overrides let a payment go over an envelope’s limit in an emergency, with a reason.';
+    : 'An emergency override lets one spend go over an envelope’s limit, or raises a limit mid-month, with a reason. When none are left, limits stay as they are until next month. Raising these two numbers takes effect from next month; lowering them applies at once.';
+  const nx = household && household.rulesNext;
+  if (!partnerIds().length && nx && nx.from > THIS) $('#rulesNote').textContent += ` Changes waiting for ${label(nx.from)}: ${nx.overridesPerMonth} overrides a month, up to ${fmt(nx.overrideCap)} each.`;
   msg($('#rulesMsg'), '');
 }
 $('#saveRules').addEventListener('click', () => {
@@ -705,16 +743,19 @@ $('#saveRules').addEventListener('click', () => {
   const next = { miscThreshold: Math.round(+$('#r-misc').value), overridesPerMonth: Math.round(+$('#r-ovr').value), overrideCap: Math.round(+$('#r-cap').value), fdRate: Math.round(+$('#r-fd').value * 100) / 100 };
   if (!(next.fdRate > 0 && next.fdRate < 20)) return msg(m, 'Enter an FD rate between 0 and 20%.');
   if (!(next.miscThreshold >= 0) || !(next.overridesPerMonth >= 0 && next.overridesPerMonth <= 10) || !(next.overrideCap >= 0)) return msg(m, 'Use whole numbers. Overrides can be 0 to 10 a month.');
-  const direct = { 'rules.miscThreshold': next.miscThreshold, 'rules.fdRate': next.fdRate }, changes = [];
+  const direct = { 'rules.miscThreshold': next.miscThreshold, 'rules.fdRate': next.fdRate, 'rules.overridesPerMonth': cur0.overridesPerMonth, 'rules.overrideCap': cur0.overrideCap, rulesNext: null }, changes = [];
+  let later = false;
   for (const k of ['overridesPerMonth', 'overrideCap']) {
     if (next[k] > cur0[k] && partnerIds().length) changes.push({ kind: 'rule', key: k, name: RULE_NAMES[k], from: cur0[k], to: next[k] });
+    else if (next[k] > cur0[k]) later = true; // solo: increases wait until next month
     else direct['rules.' + k] = next[k];
   }
+  if (later) direct.rulesNext = { overridesPerMonth: Math.max(next.overridesPerMonth, 0), overrideCap: Math.max(next.overrideCap, 0), from: shiftKey(THIS, 1) };
   const batch = writeBatch(fs);
   batch.update(hhRef(), direct);
   if (changes.length) batch.set(doc(collection(fs, 'households', hid, 'requests')), { month: THIS, changes, reason: '', status: 'pending', requestedBy: me.uid, requestedAt: Date.now() });
   batch.commit().catch(x => { console.error(x); msg(m, 'Could not save the rules. Try again.'); });
-  msg(m, changes.length ? `Saved. The override increase is waiting for ${partnerLabel()} to approve.` : 'Rules saved.', true);
+  msg(m, changes.length ? `Saved. The override increase is waiting for ${partnerLabel()} to approve.` : later ? `Saved. The higher override numbers start from ${label(shiftKey(THIS, 1))}.` : 'Rules saved.', true);
 });
 
 /* ---------- Scan & Pay ---------- */
@@ -857,7 +898,7 @@ function renderPay() {
   if (e && amt > 0 && !isSave(e)) { // paying more into savings is never "overspending"
     const left = (+e.limit || 0) - (s.byEnv[e.id] || 0), over = amt - Math.max(left, 0);
     if (over > 0) {
-      const remain = Math.max(0, r.overridesPerMonth - overridesUsed(cur));
+      const remain = overridesLeft(cur);
       warn.hidden = false;
       if (remain > 0 && over <= r.overrideCap) {
         pay.needOverride = true;
@@ -865,7 +906,7 @@ function renderPay() {
         $('#f-pay-reason').hidden = false;
       } else {
         pay.blocked = true;
-        warn.innerHTML = `This takes <b>${esc(e.name)}</b> over its limit by <b>${fmt(over)}</b>. ${remain ? `That’s more than the ${fmt(r.overrideCap)} override limit.` : 'No emergency overrides are left this month.'} Pick another envelope, or ${partnerIds().length ? 'ask ' + esc(partnerLabel()) + ' to raise the limit' : 'raise the limit'} first.`;
+        warn.innerHTML = `This takes <b>${esc(e.name)}</b> over its limit by <b>${fmt(over)}</b>. ${remain ? `That’s more than the ${fmt(r.overrideCap)} override limit.` : 'No emergency overrides are left this month.'} ${partnerIds().length ? 'Pick another envelope, or ask ' + esc(partnerLabel()) + ' to raise the limit first.' : 'Pick another envelope, or move money into this one from another envelope.'}`;
         $('#pay-raise').hidden = false;
       }
     }
@@ -1299,7 +1340,12 @@ $('#plan-stmt').addEventListener('click', openStmt);
 $('#acctBtn').addEventListener('click', () => {
   $('#acctWho').textContent = myName() + ' · ' + (me.email || '');
   const names = household && household.memberNames ? Object.entries(household.memberNames).map(([u, n]) => n + (u === me.uid ? ' (you)' : '')) : [];
-  $('#acctMembers').textContent = names.length > 1 ? names.join(', ') : (names[0] || '') + ' — waiting for your partner to join';
+  const shared = names.length > 1;
+  $('#acctMembers').textContent = shared ? names.join(', ') : 'Just you';
+  $('#acctCodeL').textContent = shared ? 'Budget code' : 'Invite code';
+  $('#acctShareNote').textContent = shared
+    ? 'This budget is shared. Raising limits, raising override rules and changing older entries need the other member’s approval.'
+    : 'To share this budget with a partner, they sign up, choose “Join a shared budget” and enter this code. Until then, the budget is only yours.';
   $('#acctCode').textContent = (household && household.inviteCode) || '—';
   msg($('#acctMsg'), ''); fillRules(); openSheet('acctSheet');
 });

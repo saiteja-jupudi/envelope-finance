@@ -55,16 +55,17 @@
   <div class="authbox">
     <img class="mark" src="icons/logo-mark.png" alt="" width="72" height="72">
     <h1 id="hello">Welcome</h1>
-    <p class="quiet">Your budget lives in a shared household. One of you creates it; the other joins with its code.</p>
+    <p class="quiet">Use SpendWise on your own, or share one budget with a partner.</p>
     <div class="card">
-      <h2>Start a new household</h2>
-      <p class="quiet">You'll get a 6-letter code to share with your partner.</p>
-      <button id="createHH" class="btn primary">Create household</button>
+      <h2>Start my budget</h2>
+      <p class="quiet">Set up envelopes for your own money. You can invite a partner later from Account.</p>
+      <button id="createHH" class="btn primary">Start my budget</button>
     </div>
     <div class="card">
-      <h2>Join your partner</h2>
-      <div class="field"><label for="joinCode">Household code</label><input id="joinCode" type="text" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="e.g. K7QMRT" class="mono codeinput"></div>
-      <button id="joinHH" class="btn">Join household</button>
+      <h2>Join a shared budget</h2>
+      <p class="quiet">If someone already shares their budget with you, enter the 6-letter code from their Account screen.</p>
+      <div class="field"><label for="joinCode">Budget code</label><input id="joinCode" type="text" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="e.g. K7QMRT" class="mono codeinput"></div>
+      <button id="joinHH" class="btn">Join budget</button>
     </div>
     <p id="onboardMsg" class="err" hidden></p>
     <button type="button" class="link" id="onboardOut">Sign out</button>
@@ -119,6 +120,7 @@
     <div class="field" id="f-add-envs"><label>Envelope</label><div id="add-envs" class="envpick"></div></div>
     <div class="field"><label for="add-amount" id="add-amount-l">Amount to spend now (₹)</label><input id="add-amount" class="amount" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
     <p id="add-after" class="after" hidden></p>
+    <div class="field" id="f-add-reason" hidden><label for="add-reason">Reason for going over the limit</label><input id="add-reason" type="text" maxlength="120" placeholder="e.g. Doctor visit"></div>
     <label class="check" id="f-add-past" hidden><input type="checkbox" id="add-past"> <span>Saved before this month<br><small class="quiet">Adds to “saved to date” only. This month’s salary isn’t affected.</small></span></label>
     <div class="field"><label for="add-note">What is it for? (optional)</label><input id="add-note" type="text" maxlength="80" placeholder="e.g. Big Basket order"></div>
     <details class="more" id="add-date-more"><summary>Different date</summary><div class="field"><label for="add-date">Date</label><input id="add-date" type="date"></div></details>
@@ -143,7 +145,7 @@
     <button id="plan-addrow" class="btn ghost" style="align-self:flex-start">+ Add envelope</button>
     <p id="plan-alloc" class="alloc"></p>
     <p id="plan-note" class="note" hidden></p>
-    <div class="field" id="f-reason" hidden><label for="plan-reason">Reason for the increase (your partner sees this)</label><input id="plan-reason" type="text" maxlength="120" placeholder="e.g. Cousin's wedding gift"></div>
+    <div class="field" id="f-reason" hidden><label for="plan-reason" id="plan-reason-l">Reason for the increase</label><input id="plan-reason" type="text" maxlength="120" placeholder="e.g. Cousin's wedding gift"></div>
     <p id="plan-err" class="err" hidden></p>
     <div class="row"><button id="plan-save" class="btn primary">Save envelopes</button><button class="btn ghost" data-close>Cancel</button></div>
   </div>
@@ -208,7 +210,7 @@
     <div class="field"><label for="ed-note">What was it for? (optional)</label><input id="ed-note" type="text" maxlength="80"></div>
     <div class="field"><label for="ed-date">Date</label><input id="ed-date" type="date"></div>
     <p id="ed-ok" class="note" hidden></p>
-    <div class="field" id="f-ed-reason" hidden><label for="ed-reason">Reason (your partner sees this)</label><input id="ed-reason" type="text" maxlength="120" placeholder="e.g. Entered the chit total by mistake"></div>
+    <div class="field" id="f-ed-reason" hidden><label for="ed-reason">Reason (shown to the other member)</label><input id="ed-reason" type="text" maxlength="120" placeholder="e.g. Entered the chit total by mistake"></div>
     <div class="sheet-actions">
       <p id="ed-err" class="err" hidden></p>
       <div class="row"><button id="ed-save" class="btn primary">Save changes</button><button class="btn ghost" data-close>Cancel</button></div>
@@ -236,8 +238,8 @@
       <p class="quiet">Add your bank statements and SpendWise works out what you usually spend on rent, groceries, eating out and the rest, then suggests a monthly limit for each.</p>
       <div class="disclaimer" role="note">
         <b>Your statements stay on your phone</b>
-        <p>Statements you add here are read and analysed only on this phone. They are never uploaded to SpendWise, your partner or anyone else, and SpendWise does not store them. Signing out, closing the app or tapping “Clear statements” removes them.</p>
-        <p>What is saved: only the envelopes and limits you choose to save, which your household can see. Payee labels you pick (for example “Rent”) are kept on this phone only.</p>
+        <p>Statements you add here are read and analysed only on this phone. They are never uploaded to SpendWise or anyone else, including anyone you share the budget with, and SpendWise does not store them. Signing out, closing the app or tapping “Clear statements” removes them.</p>
+        <p>What is saved: only the envelopes and limits you choose to save (and anyone you share the budget with can see them). Payee labels you pick (for example “Rent”) are kept on this phone only.</p>
       </div>
       <ol class="steps quiet">
         <li>In net banking or the bank app, download the account statement for the last 12 to 24 months, as a PDF or Excel file.</li>
@@ -264,10 +266,10 @@
     <h2>Account</h2>
     <dl class="acct">
       <div><dt>Signed in as</dt><dd id="acctWho"></dd></div>
-      <div><dt>Household members</dt><dd id="acctMembers"></dd></div>
-      <div><dt>Household code</dt><dd><span id="acctCode" class="mono code"></span> <button id="copyCode" class="btn small">Copy</button></dd></div>
+      <div><dt>Who uses this budget</dt><dd id="acctMembers"></dd></div>
+      <div><dt id="acctCodeL">Invite code</dt><dd><span id="acctCode" class="mono code"></span> <button id="copyCode" class="btn small">Copy</button></dd></div>
     </dl>
-    <p class="quiet">Your partner signs up, chooses “Join your partner”, and enters this code.</p>
+    <p class="quiet" id="acctShareNote"></p>
     <button id="acctStmt" class="btn" style="align-self:flex-start">Suggest limits from my bank statement</button>
     <h2>Rules</h2>
     <div class="field"><label for="r-misc">Payments under this amount go to Misc automatically (₹)</label><input id="r-misc" type="number" inputmode="numeric" min="0" step="50"></div>
