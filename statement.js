@@ -284,6 +284,7 @@ export const OTHER_CATS = [
   { key: 'people', name: 'Transfers to people', type: 'spend' },
   { key: 'misc', name: 'Miscellaneous', type: 'spend' },
   { key: 'oneoff', name: 'Big one-off payments', type: 'save' },
+  { key: 'partner', name: 'My partner / spouse', type: 'save' },
 ];
 export const ALL_CATS = [...CATEGORIES, ...OTHER_CATS];
 // What a fixed monthly payment can be. Saving kinds become savings envelopes.
@@ -309,7 +310,10 @@ export function categorise(t, learned = {}) {
 const roundUp = (v, step = 500) => v <= 0 ? 0 : Math.ceil(v / step) * step;
 const monthsBetween = (a, b) => { const out = []; let [y, m] = a.split('-').map(Number); const [y2, m2] = b.split('-').map(Number); while (y < y2 || (y === y2 && m <= m2)) { out.push(`${y}-${pad(m)}`); if (++m > 12) { m = 1; y++; } } return out; };
 
-export function analyse(txns, learned = {}, holders = []) {
+// holders: account-holder names from the statements. partners: the partner's name(s) in the app.
+// Money sent to and received from a partner is household money moving around, so it is netted and kept out of limits.
+const isPartner = (cp, partners) => { const words = cp.split(/\s+/); return partners.some(p => p.toUpperCase().split(/\s+/).filter(w => w.length >= 4).some(w => words.includes(w))); };
+export function analyse(txns, learned = {}, holders = [], partners = []) {
   if (!txns.length) return null;
   const sorted = [...txns].sort((a, b) => a.date.localeCompare(b.date));
   const first = sorted[0].date, last = sorted[sorted.length - 1].date;
@@ -325,15 +329,16 @@ export function analyse(txns, learned = {}, holders = []) {
   const inRange = new Set(months);
   const use = sorted.filter(t => inRange.has(t.date.slice(0, 7)));
   const out = use.filter(t => t.dir === 'out'), inc = use.filter(t => t.dir === 'in');
-  for (const t of out) { t.cp = counterparty(t.desc); t.cat = categorise(t, learned); if (!learned[t.cp] && holders.length && isHolder(t.cp, holders)) t.cat = 'self'; }
+  for (const t of out) { t.cp = counterparty(t.desc); t.cat = categorise(t, learned); if (!learned[t.cp] && holders.length && isHolder(t.cp, holders)) t.cat = 'self'; if (!learned[t.cp] && partners.length && isPartner(t.cp, partners)) t.cat = 'partner'; }
   // Income: salary-like credits.
   const incByMonth = Object.fromEntries(months.map(m => [m, 0]));
   for (const t of inc) incByMonth[t.date.slice(0, 7)] += t.amount;
-  for (const t of inc) t.cp = counterparty(t.desc);
+  for (const t of inc) { t.cp = counterparty(t.desc); t.fromPartner = learned[t.cp] === 'partner' || (!learned[t.cp] && partners.length && isPartner(t.cp, partners)); }
+  for (const t of inc) if (t.fromPartner) incByMonth[t.date.slice(0, 7)] -= t.amount;
   // Salary: group credits by payer and take the largest one that looks like an employer
   // (says SALARY, is a company, or pays in most months).
   const byPayer = {};
-  for (const t of inc) { if (/INT\.?PD|INTEREST|REFUND|REVERSAL|CASHBACK|SELFFT|SELF ?TRANSFER|BY CASH|CASH DEP/i.test(t.desc)) continue; (byPayer[t.cp] = byPayer[t.cp] || []).push(t); }
+  for (const t of inc) { if (t.fromPartner) continue; if (/INT\.?PD|INTEREST|REFUND|REVERSAL|CASHBACK|SELFFT|SELF ?TRANSFER|BY CASH|CASH DEP/i.test(t.desc)) continue; (byPayer[t.cp] = byPayer[t.cp] || []).push(t); }
   const cand = Object.entries(byPayer).map(([cp, l]) => ({ cp, l, total: l.reduce((a, t) => a + t.amount, 0), months: new Set(l.map(t => t.date.slice(0, 7))).size, kw: l.some(t => /\b(SALARY|SAL|PAYROLL)\b|-SAL\b/i.test(t.desc)) }))
     .filter(c => c.kw || /\b(LLP|LTD|LIMITED|PVT|PRIVATE|INC|CORP|TECHNOLOGIES|SOLUTIONS|SERVICES|INDIA)\b/.test(c.cp) || c.months >= Math.max(3, Math.ceil(months.length * 0.6)))
     .sort((a, b) => b.total - a.total)[0];
@@ -358,7 +363,7 @@ export function analyse(txns, learned = {}, holders = []) {
   const fixed = [], ord = t => t.date.slice(0, 7);
   const toPerson = t => /P2A|IMPS|NEFT|RTGS|MMT|INB/.test(t.desc.toUpperCase());
   const dayDist = (a, b) => { const d = Math.abs(a - b); return Math.min(d, 31 - d); };
-  const free = t => !['self', 'oneoff'].includes(t.cat) && !String(t.cat).startsWith('fixed:');
+  const free = t => !['self', 'oneoff', 'partner'].includes(t.cat) && !String(t.cat).startsWith('fixed:');
   const userKind = cp => String(learned[cp] || '').startsWith('fixed:') ? learned[cp].slice(6) : null;
   const guessKind = (t, amt) => {
     const d = t.desc.toUpperCase(), round = amt % 500 === 0;
@@ -462,7 +467,7 @@ export function analyse(txns, learned = {}, holders = []) {
     suggestions.push({
       key: c.key, name: c.name, type: c.type, regular, typical: Math.round(typical), average: Math.round(avg),
       highest: Math.round(Math.max(...vals)), activeMonths: active, limit: roundUp(base, base > 5000 ? 500 : 100),
-      fixed: ['rent', 'emi', 'insurance', 'savings'].includes(c.key), off: ['self', 'oneoff'].includes(c.key),
+      fixed: ['rent', 'emi', 'insurance', 'savings'].includes(c.key), off: ['self', 'oneoff', 'partner'].includes(c.key),
     });
   }
   suggestions.sort((a, b) => (!!b.commitment - !!a.commitment) || (!!a.off - !!b.off) || (a.type === b.type ? b.limit - a.limit : a.type === 'save' ? 1 : -1));
@@ -475,12 +480,14 @@ export function analyse(txns, learned = {}, holders = []) {
   const big = out.filter(t => t.cat === 'oneoff').sort((a, b) => b.amount - a.amount).slice(0, 8)
     .map(t => ({ date: t.date, name: t.cp, amount: t.amount, cat: t.cat }));
 
-  const spentTotal = out.filter(t => t.cat !== 'self').reduce((a, t) => a + t.amount, 0);
+  const n = months.length;
+  const partner = { sent: Math.round(out.filter(t => t.cat === 'partner').reduce((a, t) => a + t.amount, 0) / n), got: Math.round(inc.filter(t => t.fromPartner).reduce((a, t) => a + t.amount, 0) / n) };
+  const spentTotal = out.filter(t => !['self', 'partner'].includes(t.cat)).reduce((a, t) => a + t.amount, 0);
   const selfMonthly = Math.round((cats.self ? cats.self.total : 0) / months.length);
   return {
     from: months[0], to: months[months.length - 1], months: months.length, txnCount: use.length, partialMonths,
     firstDate: first, lastDate: last, salary: Math.round(salary), salaryFrom, incomeMonthly: Math.round(median(Object.values(incByMonth))),
-    outMonthly: Math.round(spentTotal / months.length), selfMonthly, bigLine, suggestions, recurring, review, big,
+    outMonthly: Math.round(spentTotal / months.length), selfMonthly, partner, bigLine, suggestions, recurring, review, big,
   };
 }
 

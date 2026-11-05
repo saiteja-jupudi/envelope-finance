@@ -1161,7 +1161,8 @@ async function runAnalysis(keepSel) {
   const { mergeTxns, analyse } = await stmtMod();
   const txns = mergeTxns(stmt.files.filter(f => f.status === 'ok').map(f => f.txns.map(t => ({ ...t }))));
   const holders = [...new Set(stmt.files.map(f => f.holder).filter(Boolean))];
-  const r = analyse(txns, loadLearned(), holders);
+  const partners = household && household.memberNames ? Object.entries(household.memberNames).filter(([u]) => !me || u !== me.uid).map(([, n]) => n) : [];
+  const r = analyse(txns, loadLearned(), holders, partners);
   if (!r) { msg($('#st-err'), 'No spending was found in these files.'); return false; }
   const old = stmt.sel; stmt.sel = {};
   for (const g of r.suggestions) {
@@ -1220,6 +1221,7 @@ function renderStmtResult() {
       <div><span class="label">Salary a month</span><input id="st-salary" type="number" inputmode="numeric" min="0" step="500" value="${stmt.salary || ''}" placeholder="Enter salary" aria-label="Salary a month"><small>${r.salary ? 'Found in the statement · change if wrong' : 'Not found · enter it'}</small></div>
       <div><span class="label">Spent a month</span><b>${fmt(r.outMonthly)}</b><small>Average, not counting moves to your own accounts</small></div>
       ${otherIn > 1000 ? `<div><span class="label">Other money in</span><b>${fmt(otherIn)}</b><small>A month, besides salary</small></div>` : ''}
+      ${r.partner.sent || r.partner.got ? `<div><span class="label">With your partner</span><b>${fmt(r.partner.sent - r.partner.got)}</b><small>Net a month: sent ${fmt(r.partner.sent)}, got back ${fmt(r.partner.got)}. Kept out of limits.</small></div>` : ''}
       ${r.selfMonthly > 0 ? `<div><span class="label">To own accounts</span><b>${fmt(r.selfMonthly)}</b><small>A month, on average</small></div>` : ''}
     </div>
     <div class="row"><button class="btn small" data-st="trim">Trim spending limits by 10%</button></div>
@@ -1229,7 +1231,7 @@ function renderStmtResult() {
     ${r.review.length ? `<details class="stsec"><summary>Sort out unclear payments (${r.review.length})</summary><p class="quiet" style="margin:0 0 8px;font-size:.85rem">Transfers to people and unknown shops. Pick what each one is for and the limits update. Your choices stay on this phone.</p><ul class="stlist">${reviewHTML}</ul></details>` : ''}
     ${r.recurring.length ? `<details class="stsec"><summary>Regular payments (${r.recurring.length})</summary><ul class="stlist">${recHTML}</ul></details>` : ''}
     ${r.big.length ? `<details class="stsec"><summary>Big one-off payments (${r.big.length})</summary><p class="quiet" style="margin:0 0 8px;font-size:.85rem">Over ${fmt(r.bigLine)} each. Left out of monthly limits.</p><ul class="stlist">${bigHTML}</ul></details>` : ''}
-    <p class="privacy" style="font-size:.82rem">Nothing from your statement has left this phone. Only the envelopes you save are shared with your partner.</p>
+    <p class="privacy" style="font-size:.82rem">Nothing from your statement has left this phone: the app is only allowed to talk to its own database, and the statement is never written there. Only the envelopes you save are shared with your partner. Payee labels you pick stay on this phone. <button class="link" data-st="forget-labels">Forget my payee labels</button></p>
     <div class="sheet-actions"><div class="row"><button id="st-use" class="btn primary">Use these for ${label(cur, true)}</button><button class="btn ghost" data-st="more">Add statements</button></div>
     <div class="row"><button class="btn ghost small" data-st="forget">Clear statements</button><button class="btn ghost small" data-close-st>Close</button></div></div>`;
   renderStmtTotal();
@@ -1268,6 +1270,7 @@ $('#st-result').addEventListener('click', ev => {
   else if (a === 'trim') {
     for (const g of stmt.result.suggestions) { const v = stmt.sel[g.key]; if (g.type === 'spend' && !g.fixed && v.on) { v.limit = Math.round(v.limit * 0.9 / 100) * 100; v.edited = true; } }
     renderStmtResult(); toast('Flexible spending limits trimmed by 10%');
+  } else if (a === 'forget-labels') { try { localStorage.removeItem(LEARN_KEY); } catch { /* nothing stored */ } runAnalysis(false).then(() => renderStmtResult()); toast('Payee labels removed from this phone');
   } else if (a === 'forget') { stmt = { mod: stmt.mod, files: [], result: null, sel: {}, salary: 0 }; closeSheets(); toast('Statements cleared from this phone'); }
 });
 function useSuggestions() {
@@ -1309,7 +1312,8 @@ $('#acctReset').addEventListener('click', async () => {
   try { await sendPasswordResetEmail(auth, me.email); msg($('#acctMsg'), 'Reset link sent to ' + me.email + '. Check spam too.', true); }
   catch (e) { msg($('#acctMsg'), authErr(e)); }
 });
-$('#acctOut').addEventListener('click', () => { closeSheets(); signOut(auth); });
+const clearStatements = () => { stmt = { mod: stmt.mod, files: [], result: null, sel: {}, salary: 0 }; };
+$('#acctOut').addEventListener('click', () => { closeSheets(); clearStatements(); signOut(auth); });
 
 /* ---------- events ---------- */
 $('#main').addEventListener('click', ev => {
