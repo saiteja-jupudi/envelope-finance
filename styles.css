@@ -430,3 +430,6 @@ td,th{font-family:var(--f-body)}
 .envtx .none{margin:0;color:var(--muted);font-size:.9rem;padding:4px 2px}
 .env.warn::before{background:color-mix(in srgb,var(--c,var(--accent)) 32%,var(--card))}
 .env.warn .meter i{background:var(--orange)}
+/* Every envelope gets a border in a deeper shade of its own colour; over-limit ones switch to red. */
+.env{border:2px solid color-mix(in srgb,var(--c,var(--accent)) 55%,var(--card))}
+.env.over{border-color:var(--over);box-shadow:var(--shadow)}
