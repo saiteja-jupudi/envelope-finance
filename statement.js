@@ -329,7 +329,9 @@ export function analyse(txns, learned = {}) {
   const cpMonths = {};
   for (const t of out) (cpMonths[t.cp] = cpMonths[t.cp] || new Set()).add(t.date.slice(0, 7));
   const bigLine = salary ? Math.max(20000, salary * 0.5) : 50000;
-  for (const t of out) if (t.amount >= bigLine && cpMonths[t.cp].size < 3 && !learned[t.cp] && !['rent', 'emi', 'savings', 'self', 'insurance', 'education'].includes(t.cat)) t.cat = 'oneoff';
+  // A payment over twice the monthly salary is a one-off even if the same payee was paid that way a few times (property instalments).
+  const hugeLine = salary ? salary * 2 : 200000;
+  for (const t of out) if (t.amount >= bigLine && (cpMonths[t.cp].size < 3 || t.amount >= hugeLine) && !learned[t.cp] && !['rent', 'emi', 'savings', 'self', 'insurance', 'education'].includes(t.cat)) t.cat = 'oneoff';
 
   // Monthly totals per category (months with no spend count as zero).
   const cats = {};
@@ -359,7 +361,9 @@ export function analyse(txns, learned = {}) {
     const vals = months.map(m => c.byMonth[m]), active = vals.filter(v => v > 0).length, share = active / months.length;
     const typical = median(vals), avg = c.total / months.length;
     const regular = share >= 0.5;
-    const base = regular ? Math.max(typical, avg * 0.9) : avg; // occasional: spread the yearly total evenly
+    // Regular: a month more than twice the usual is treated as a spike, so the limit follows normal months.
+    const capped = vals.map(v => typical ? Math.min(v, typical * 2) : v), avgNormal = capped.reduce((a, v) => a + v, 0) / vals.length;
+    const base = regular ? Math.max(typical, avgNormal) : avg; // occasional: spread the yearly total evenly
     suggestions.push({
       key: c.key, name: c.name, type: c.type, regular, typical: Math.round(typical), average: Math.round(avg),
       highest: Math.round(Math.max(...vals)), activeMonths: active, limit: roundUp(base, base > 5000 ? 500 : 100),
