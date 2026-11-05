@@ -246,6 +246,7 @@ function renderMonth() {
     main.innerHTML = approvalsHTML() + `<div class="empty"><h2>No envelopes for ${label(cur)} yet</h2>
       <p>When salary comes in, enter it and set a limit for each envelope. Then log each spend against an envelope, and the balance updates on both phones.</p>
       <div class="row">${prev ? `<button class="btn primary" data-act="copy" data-k="${prev}">Copy ${label(prev, true)} envelopes</button>` : ''}<button class="btn ${prev ? '' : 'primary'}" data-act="fresh">${prev ? 'Start from scratch' : 'Set up envelopes'}</button></div>
+      <button class="link" data-act="stmt">Not sure how much to put in each? Get suggestions from your bank statement</button>
     </div>${s.t.length ? ledgerHTML(s) : ''}`;
     return;
   }
@@ -509,7 +510,7 @@ function cumChart(el, k) {
 
 /* ---------- sheets ---------- */
 function openSheet(id) { $('#backdrop').hidden = false; $('#' + id).hidden = false; }
-function closeSheets() { stopScan(); $('#backdrop').hidden = true; for (const id of ['addSheet', 'planSheet', 'acctSheet', 'paySheet', 'confirmSheet', 'fundsSheet', 'editSheet']) $('#' + id).hidden = true; }
+function closeSheets() { stopScan(); $('#backdrop').hidden = true; for (const id of ['addSheet', 'planSheet', 'acctSheet', 'paySheet', 'confirmSheet', 'fundsSheet', 'editSheet', 'stmtSheet']) $('#' + id).hidden = true; }
 
 function openAdd(envId) {
   const s = stats(cur); if (!s.plan) return;
@@ -1108,6 +1109,175 @@ $('#funds-save').addEventListener('click', () => {
   closeSheets(); toast('Savings details saved');
 });
 
+/* ---------- suggestions from bank statements (read on this phone only) ---------- */
+let stmt = { mod: null, files: [], result: null, sel: {}, salary: 0 };
+const LEARN_KEY = 'sw.learned';
+const loadLearned = () => { try { return JSON.parse(localStorage.getItem(LEARN_KEY)) || {}; } catch { return {}; } };
+const saveLearned = l => { try { localStorage.setItem(LEARN_KEY, JSON.stringify(l)); } catch { /* fine without it */ } };
+const CAT_COLOR = { rent: 'var(--blue)', emi: 'var(--purple)', card: 'var(--purple)', groceries: 'var(--green)', eating: 'var(--orange)', transport: 'var(--yellow)', bills: 'var(--teal)', health: 'var(--teal)', shopping: 'var(--orange)', household: 'var(--yellow)', savings: 'var(--green)', self: 'var(--green)', oneoff: 'var(--green)' };
+const monthsLabel = (a, b) => a === b ? label(a) : label(a, true) + ' – ' + label(b, true);
+
+async function stmtMod() { if (!stmt.mod) stmt.mod = await import('./statement.js'); return stmt.mod; }
+function openStmt() {
+  closeSheets();
+  $('#st-pick').hidden = !!stmt.result; $('#st-result').hidden = !stmt.result;
+  if (stmt.result) renderStmtResult(); else renderStmtFiles();
+  openSheet('stmtSheet'); $('#stmtSheet').scrollTop = 0;
+}
+function renderStmtFiles() {
+  $('#st-files').innerHTML = stmt.files.map(f => `<li class="${f.status === 'bad' ? 'bad' : f.status === 'ok' ? '' : 'wait'}"><span>${esc(f.name)}</span><small>${
+    f.status === 'ok' ? `${f.txns.length} entries · ${monthsLabel(f.txns[0].date.slice(0, 7), f.txns[f.txns.length - 1].date.slice(0, 7))}`
+    : f.status === 'reading' ? 'Reading…' : f.status === 'password' ? 'Needs password' : esc(f.err)}</small></li>`).join('');
+  const pw = stmt.files.find(f => f.status === 'password');
+  $('#st-pw').hidden = !pw;
+  if (pw) $('#st-pass-l').textContent = `Password for ${pw.name}${pw.wrong ? ' (that one didn’t work)' : ''}`;
+  $('#st-go').disabled = !stmt.files.some(f => f.status === 'ok') || stmt.files.some(f => f.status === 'reading');
+}
+async function readOne(f, password) {
+  f.status = 'reading'; renderStmtFiles();
+  try {
+    const { readStatement } = await stmtMod();
+    f.txns = (await readStatement(f.file, password)).txns; f.status = 'ok'; f.file = null;
+  } catch (e) {
+    if (e.code === 'password' || e.code === 'wrong-password') { f.status = 'password'; f.wrong = e.code === 'wrong-password'; }
+    else { f.status = 'bad'; f.err = e.message || 'Could not read this file.'; console.error(e); }
+  }
+  renderStmtFiles();
+}
+$('#st-file').addEventListener('change', async ev => {
+  const picked = [...ev.target.files]; ev.target.value = '';
+  $('#st-err').hidden = true;
+  const added = picked.map(file => ({ name: file.name, file, status: 'reading' }));
+  stmt.files.push(...added); renderStmtFiles();
+  for (const f of added) await readOne(f);
+});
+$('#st-pass-go').addEventListener('click', () => {
+  const f = stmt.files.find(x => x.status === 'password'); const pw = $('#st-pass').value;
+  if (!f || !pw) return; $('#st-pass').value = ''; readOne(f, pw);
+});
+$('#st-pass').addEventListener('keydown', e => { if (e.key === 'Enter') $('#st-pass-go').click(); });
+
+async function runAnalysis(keepSel) {
+  const { mergeTxns, analyse } = await stmtMod();
+  const txns = mergeTxns(stmt.files.filter(f => f.status === 'ok').map(f => f.txns.map(t => ({ ...t }))));
+  const r = analyse(txns, loadLearned());
+  if (!r) { msg($('#st-err'), 'No spending was found in these files.'); return false; }
+  const old = stmt.sel; stmt.sel = {};
+  for (const g of r.suggestions) {
+    const o = keepSel && old[g.key];
+    stmt.sel[g.key] = { on: o ? o.on : !g.off, name: o ? o.name : g.name, limit: o && o.edited ? o.limit : g.limit, edited: !!(o && o.edited), type: g.type };
+  }
+  if (!keepSel || !stmt.salary) stmt.salary = r.salary;
+  stmt.result = r; return true;
+}
+$('#st-go').addEventListener('click', async () => {
+  $('#st-go').disabled = true;
+  try { if (await runAnalysis(false)) { $('#st-pick').hidden = true; $('#st-result').hidden = false; renderStmtResult(); $('#stmtSheet').scrollTop = 0; } }
+  catch (e) { console.error(e); msg($('#st-err'), 'Something went wrong while reading the statements.'); }
+  finally { renderStmtFiles(); }
+});
+
+function stmtTotals() {
+  let spend = 0, save = 0;
+  for (const v of Object.values(stmt.sel)) if (v.on) { if (v.type === 'save') save += +v.limit || 0; else spend += +v.limit || 0; }
+  return { spend, save, left: (+stmt.salary || 0) - spend - save };
+}
+function renderStmtTotal() {
+  const t = stmtTotals();
+  $('#st-total').innerHTML = `Spending <b>${fmt(t.spend)}</b> · Saving <b class="pos">${fmt(t.save)}</b> of salary <b>${fmt(stmt.salary)}</b> · ${t.left >= 0 ? 'Unbudgeted' : 'Over by'} <b class="${t.left < 0 ? 'neg' : ''}">${fmt(Math.abs(t.left))}</b>`;
+  $('#st-use').disabled = !Object.values(stmt.sel).some(v => v.on && +v.limit > 0);
+}
+function renderStmtResult() {
+  const r = stmt.result, { ALL_CATS } = stmt.mod;
+  const days = Math.round((new Date(r.lastDate) - new Date(r.firstDate)) / 864e5) + 1;
+  const short = r.months < 3;
+  const otherIn = Math.max(0, r.incomeMonthly - r.salary);
+  const sugHTML = r.suggestions.map(g => {
+    const v = stmt.sel[g.key];
+    const meta = g.key === 'oneoff' ? `${r.big.length} large payment${r.big.length === 1 ? '' : 's'} averaged over the year. Turn on to save for the next one.`
+      : g.key === 'self' ? 'Money moved to your other accounts. Not spending. Turn on if it’s regular saving.'
+      : g.regular ? `Usually ${fmt(g.typical)} a month · highest ${fmt(g.highest)}${g.key === 'card' ? ' · card spends are inside this bill' : ''}`
+      : `Only in ${g.activeMonths} of ${r.months} months · averages ${fmt(g.average)} a month, so set aside each month`;
+    return `<div class="sug${v.on ? '' : ' off'}" style="--c:${CAT_COLOR[g.key] || 'var(--accent)'}">
+      <input type="checkbox" data-sk="${g.key}" data-sf="on" ${v.on ? 'checked' : ''} aria-label="Use ${esc(v.name)}">
+      <div style="min-width:0"><input class="nm" data-sk="${g.key}" data-sf="name" value="${esc(v.name)}" maxlength="40" aria-label="Envelope name">${g.type === 'save' ? '<span class="tag save">Save</span>' : g.fixed ? '<span class="tag">Fixed</span>' : ''}</div>
+      <input class="lim" type="number" inputmode="numeric" min="0" step="100" data-sk="${g.key}" data-sf="limit" value="${v.limit}" aria-label="Monthly limit for ${esc(v.name)}">
+      <div class="meta">${meta}</div></div>`;
+  }).join('');
+  const opts = sel => ALL_CATS.map(c => `<option value="${c.key}" ${c.key === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  const reviewHTML = r.review.map(x => `<li><span>${esc(x.name)}<small>${x.count} payment${x.count === 1 ? '' : 's'} · ${fmt(x.total)} in all</small></span><select data-learn="${esc(x.name)}" aria-label="Category for ${esc(x.name)}">${opts(x.cat)}</select></li>`).join('');
+  const recHTML = r.recurring.map(x => `<li><span>${esc(x.name)}<small>${x.months} months · ${esc((ALL_CATS.find(c => c.key === x.cat) || {}).name || '')}</small></span><span class="amt">${fmt(x.monthly)}/mo</span></li>`).join('');
+  const bigHTML = r.big.map(x => `<li><span>${esc(x.name)}<small>${fmtDate(x.date)}</small></span><span class="amt">${fmt(x.amount)}</span></li>`).join('');
+  $('#st-result').innerHTML = `
+    <h2>Suggested envelopes</h2>
+    <p class="quiet" style="margin:0">From ${r.txnCount} entries, ${monthsLabel(r.from, r.to)}. Change any name or amount, untick what you don’t want.</p>
+    ${short ? `<p class="stwarn">This covers only ${days} days. Add 12 months or more so festivals, school fees and yearly bills are counted. <button class="link" data-st="more">Add more statements</button></p>` : ''}
+    <div class="stfacts">
+      <div><span class="label">Salary a month</span><input id="st-salary" type="number" inputmode="numeric" min="0" step="500" value="${stmt.salary || ''}" placeholder="Enter salary" aria-label="Salary a month"><small>${r.salary ? 'Found in the statement · change if wrong' : 'Not found · enter it'}</small></div>
+      <div><span class="label">Spent a month</span><b>${fmt(r.outMonthly)}</b><small>Average, not counting moves to your own accounts</small></div>
+      ${otherIn > 1000 ? `<div><span class="label">Other money in</span><b>${fmt(otherIn)}</b><small>A month, besides salary</small></div>` : ''}
+      ${r.selfMonthly > 0 ? `<div><span class="label">To own accounts</span><b>${fmt(r.selfMonthly)}</b><small>A month, on average</small></div>` : ''}
+    </div>
+    <div class="row"><button class="btn small" data-st="trim">Trim spending limits by 10%</button></div>
+    <div class="sugs" id="st-sugs">${sugHTML}</div>
+    <p class="sttotal alloc" id="st-total"></p>
+    ${r.review.length ? `<details class="stsec"><summary>Sort out unclear payments (${r.review.length})</summary><p class="quiet" style="margin:0 0 8px;font-size:.85rem">Transfers to people and unknown shops. Pick what each one is for and the limits update. Your choices stay on this phone.</p><ul class="stlist">${reviewHTML}</ul></details>` : ''}
+    ${r.recurring.length ? `<details class="stsec"><summary>Regular payments (${r.recurring.length})</summary><ul class="stlist">${recHTML}</ul></details>` : ''}
+    ${r.big.length ? `<details class="stsec"><summary>Big one-off payments (${r.big.length})</summary><p class="quiet" style="margin:0 0 8px;font-size:.85rem">Over ${fmt(r.bigLine)} each. Left out of monthly limits.</p><ul class="stlist">${bigHTML}</ul></details>` : ''}
+    <p class="privacy" style="font-size:.82rem">Nothing from your statement has left this phone. Only the envelopes you save are shared with your partner.</p>
+    <div class="sheet-actions"><div class="row"><button id="st-use" class="btn primary">Use these for ${label(cur, true)}</button><button class="btn ghost" data-st="more">Add statements</button></div>
+    <div class="row"><button class="btn ghost small" data-st="forget">Clear statements</button><button class="btn ghost small" data-close-st>Close</button></div></div>`;
+  renderStmtTotal();
+}
+$('#st-result').addEventListener('input', ev => {
+  const t = ev.target;
+  if (t.id === 'st-salary') { stmt.salary = Math.round(+t.value || 0); renderStmtTotal(); return; }
+  const k = t.dataset.sk; if (!k) return;
+  const v = stmt.sel[k];
+  if (t.dataset.sf === 'on') { v.on = t.checked; t.closest('.sug').classList.toggle('off', !v.on); }
+  else if (t.dataset.sf === 'limit') { v.limit = Math.round(+t.value || 0); v.edited = true; }
+  else v.name = t.value;
+  renderStmtTotal();
+});
+$('#st-result').addEventListener('change', async ev => {
+  const t = ev.target; if (!t.dataset.learn) return;
+  const l = loadLearned(); l[t.dataset.learn] = t.value; saveLearned(l);
+  await runAnalysis(true); renderStmtResult();
+  const d = $('#st-result details.stsec'); if (d) d.open = true;
+});
+$('#st-result').addEventListener('click', ev => {
+  if (ev.target.closest('[data-close-st]')) { closeSheets(); return; }
+  if (ev.target.id === 'st-use') { useSuggestions(); return; }
+  const b = ev.target.closest('[data-st]'); if (!b) return;
+  const a = b.dataset.st;
+  if (a === 'more') { $('#st-result').hidden = true; $('#st-pick').hidden = false; renderStmtFiles(); $('#stmtSheet').scrollTop = 0; }
+  else if (a === 'trim') {
+    for (const g of stmt.result.suggestions) { const v = stmt.sel[g.key]; if (g.type === 'spend' && !g.fixed && v.on) { v.limit = Math.round(v.limit * 0.9 / 100) * 100; v.edited = true; } }
+    renderStmtResult(); toast('Flexible spending limits trimmed by 10%');
+  } else if (a === 'forget') { stmt = { mod: stmt.mod, files: [], result: null, sel: {}, salary: 0 }; closeSheets(); toast('Statements cleared from this phone'); }
+});
+function useSuggestions() {
+  const chosen = stmt.result.suggestions.map(g => ({ g, v: stmt.sel[g.key] })).filter(({ v }) => v.on && +v.limit > 0 && v.name.trim())
+    .map(({ g, v }) => ({ name: v.name.trim(), limit: Math.round(+v.limit), type: g.type }));
+  closeSheets();
+  if (months[cur]) {
+    // Keep existing envelopes (and their spends); update limits of ones with the same name, add the rest.
+    openPlan('edit');
+    for (const c of chosen) {
+      const ex = planDraft.envelopes.find(e => String(e.name).trim().toLowerCase() === c.name.toLowerCase());
+      if (ex) { ex.limit = c.limit; ex.type = c.type; } else planDraft.envelopes.push({ id: uid(), ...c });
+    }
+  } else {
+    openPlan('fresh');
+    planDraft.envelopes = chosen.map(c => ({ id: uid(), ...c }));
+  }
+  if (stmt.salary && !+$('#plan-salary').value) $('#plan-salary').value = stmt.salary;
+  renderPlanRows();
+  toast('Check the amounts and tap Save envelopes');
+}
+$('#acctStmt').addEventListener('click', openStmt);
+$('#plan-stmt').addEventListener('click', openStmt);
+
 /* ---------- account ---------- */
 $('#acctBtn').addEventListener('click', () => {
   $('#acctWho').textContent = myName() + ' · ' + (me.email || '');
@@ -1135,6 +1305,7 @@ $('#main').addEventListener('click', ev => {
   else if (a === 'fresh') openPlan('fresh');
   else if (a === 'edit') openPlan('edit');
   else if (a === 'funds') openFunds();
+  else if (a === 'stmt') openStmt();
   else if (a === 'edit-tx') openEdit(b.dataset.id);
   else if (a === 'filter') { filterEnv = b.dataset.env; render(); }
   else if (a === 'rq-approve') decideRequest(b.dataset.id, true);

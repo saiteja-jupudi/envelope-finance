@@ -31,3 +31,12 @@ households/{hid}                    { inviteCode, members[], memberNames{} }
 households/{hid}/months/{YYYY-MM}   { salary, envelopes: [{id, name, limit}] }
 households/{hid}/txns/{id}          { month, date, envelopeId, envelopeName, amount, note, by, at }
 ```
+
+## Envelope suggestions from bank statements
+
+Account → "Suggest limits from my bank statement" (also on the empty-month screen and in the envelope editor).
+Add one or more statements (PDF, Excel or CSV; password-protected PDFs are supported). They are read on the phone with
+pdf.js and SheetJS (in `vendor/`, Apache-2.0); nothing from the statement is uploaded. `statement.js` rebuilds the
+transaction table, works out debits and credits from the running balance, spots the salary, sorts spends into
+categories, and suggests a monthly limit for each. Self-transfers and big one-off payments are kept out of the limits.
+Payee categories the user picks are remembered in localStorage on that phone only.

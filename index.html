@@ -138,6 +138,7 @@
     <h2 id="planTitle">Envelopes</h2>
     <div class="field"><label for="plan-salary">Salary received this month (₹)</label><input id="plan-salary" type="number" inputmode="decimal" min="0" step="1" placeholder="0"></div>
     <div class="field"><label>Envelope and monthly limit (₹)</label><div id="plan-rows" class="prows"></div></div>
+    <button id="plan-stmt" class="link" type="button">Not sure how much? Suggest limits from my bank statement</button>
     <button id="plan-addrow" class="btn ghost" style="align-self:flex-start">+ Add envelope</button>
     <p id="plan-alloc" class="alloc"></p>
     <p id="plan-note" class="note" hidden></p>
@@ -226,6 +227,32 @@
   </div>
 </section>
 
+<section id="stmtSheet" class="sheet" hidden aria-label="Suggest limits from a bank statement">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <div id="st-pick" class="stack">
+      <h2>How much should each envelope get?</h2>
+      <p class="quiet">Add your bank statements and SpendWise works out what you usually spend on rent, groceries, eating out and the rest, then suggests a monthly limit for each.</p>
+      <p class="privacy"><b>Read on this phone only.</b> The statement is never uploaded, not even to your partner. Only the envelopes you choose to save are stored.</p>
+      <ol class="steps quiet">
+        <li>In net banking or the bank app, download the account statement for the last 12 to 24 months, as a PDF or Excel file.</li>
+        <li>Add it here. You can add several files, such as one per year.</li>
+      </ol>
+      <label class="btn primary filebtn" for="st-file">Choose statement files</label>
+      <input id="st-file" type="file" accept=".pdf,.xlsx,.xls,.csv,application/pdf" multiple hidden>
+      <ul id="st-files" class="stfiles"></ul>
+      <div id="st-pw" class="field" hidden>
+        <label for="st-pass" id="st-pass-l">Statement password</label>
+        <input id="st-pass" type="password" autocomplete="off" placeholder="Often customer ID or name + date of birth">
+        <button id="st-pass-go" class="btn small" style="align-self:flex-start">Open file</button>
+      </div>
+      <p id="st-err" class="err" hidden></p>
+      <div class="row"><button id="st-go" class="btn primary" disabled>See suggestions</button><button class="btn ghost" data-close>Cancel</button></div>
+    </div>
+    <div id="st-result" class="stack" hidden></div>
+  </div>
+</section>
+
 <section id="acctSheet" class="sheet" hidden aria-label="Account">
   <div class="sheet-in">
     <div class="grab"></div>
@@ -236,6 +263,7 @@
       <div><dt>Household code</dt><dd><span id="acctCode" class="mono code"></span> <button id="copyCode" class="btn small">Copy</button></dd></div>
     </dl>
     <p class="quiet">Your partner signs up, chooses “Join your partner”, and enters this code.</p>
+    <button id="acctStmt" class="btn" style="align-self:flex-start">Suggest limits from my bank statement</button>
     <h2>Rules</h2>
     <div class="field"><label for="r-misc">Payments under this amount go to Misc automatically (₹)</label><input id="r-misc" type="number" inputmode="numeric" min="0" step="50"></div>
     <div class="field"><label for="r-ovr">Emergency overrides allowed per month</label><input id="r-ovr" type="number" inputmode="numeric" min="0" max="10" step="1"></div>
