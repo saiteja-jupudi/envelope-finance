@@ -317,7 +317,8 @@ export function analyse(txns, learned = {}) {
   const cand = Object.entries(byPayer).map(([cp, l]) => ({ cp, l, total: l.reduce((a, t) => a + t.amount, 0), months: new Set(l.map(t => t.date.slice(0, 7))).size, kw: l.some(t => /\b(SALARY|SAL|PAYROLL)\b|-SAL\b/i.test(t.desc)) }))
     .filter(c => c.kw || /\b(LLP|LTD|LIMITED|PVT|PRIVATE|INC|CORP|TECHNOLOGIES|SOLUTIONS|SERVICES|INDIA)\b/.test(c.cp) || c.months >= Math.max(3, Math.ceil(months.length * 0.6)))
     .sort((a, b) => b.total - a.total)[0];
-  const salaryTx = cand ? cand.l : [], salaryFrom = cand ? cand.cp : '';
+  // Employers often pay some months by NEFT and others by ACH ("ACH-CR-SAL-..."), which read as different payers.
+  const salaryTx = cand ? [...cand.l, ...inc.filter(t => !cand.l.includes(t) && /\bSALARY\b|-SAL-|\bSAL\b/i.test(t.desc))] : [], salaryFrom = cand ? cand.cp : '';
   const salByMonth = Object.fromEntries(months.map(m => [m, 0]));
   for (const t of salaryTx) salByMonth[t.date.slice(0, 7)] += t.amount;
   const salaryMonths = Object.values(salByMonth).filter(v => v > 0);
