@@ -1,22 +1,29 @@
 /* Layout: one narrow column — sticky month bar, summary, envelope grid, ledger; bottom sheets for entry.
    Colours follow the SpendWise India logo: navy text, a teal-to-blue envelope, and one colour per envelope. */
+/* Plus Jakarta Sans (SIL OFL), bundled with the app so no font service is contacted. */
+@font-face{font-family:"Plus Jakarta Sans";font-style:normal;font-display:swap;font-weight:200 800;src:url(vendor/fonts/plus-jakarta-sans-latin-wght-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Plus Jakarta Sans";font-style:normal;font-display:swap;font-weight:200 800;src:url(vendor/fonts/plus-jakarta-sans-latin-ext-wght-normal.woff2) format("woff2");unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
 :root{
-  --paper:#F3F6FC; --card:#FFFFFF; --ink:#0E1B3D; --muted:#5A6684; --line:#DCE3F0;
-  --accent:#1A5FD0; --accent-ink:#FFFFFF; --accent-soft:#E3ECFC; --flap:#E9EEF7;
-  --grad:linear-gradient(135deg,#16C6BE 0%,#1A5FD0 100%);
-  --teal:#0FB3AC; --yellow:#E9A21B; --green:#2FB85C; --purple:#8A5CDB; --orange:#EE7418; --blue:#1A5FD0;
-  --warn:#B06400; --warn-soft:#FDEBCF; --over:#D2382A; --over-soft:#FBE1DD;
-  --f-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
-  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --paper:#FBF6EE; --card:#FFFFFF; --ink:#1D2340; --muted:#6B6F86; --line:#EDE4D6;
+  --accent:#1F6FE0; --accent-ink:#FFFFFF; --accent-soft:#E6EFFD; --flap:#F3ECE1;
+  --grad:linear-gradient(135deg,#14BDB5 0%,#1F6FE0 100%);
+  --hero:linear-gradient(140deg,#13B3AB 0%,#1E73DE 60%,#5B5BD6 100%);
+  --teal:#11A9A2; --yellow:#E39B12; --green:#27A857; --purple:#8657D6; --orange:#EB6F1A; --blue:#1F6FE0;
+  --warn:#A65F00; --warn-soft:#FDEFD6; --over:#D3402F; --over-soft:#FCE3DE;
+  --shadow:0 1px 2px rgba(60,45,20,.05),0 6px 18px rgba(60,45,20,.07);
+  --f-display:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root{
-  --paper:#0A1126; --card:#121B35; --ink:#E8EDFA; --muted:#9AA6C6; --line:#25304F;
-  --accent:#5B95FF; --accent-ink:#FFFFFF; --accent-soft:#1A2A52; --flap:#1B2644;
-  --grad:linear-gradient(135deg,#18BDB6 0%,#2A6BE0 100%);
-  --teal:#2FD6CE; --yellow:#FFC44D; --green:#55D883; --purple:#B48DFF; --orange:#FF9A45; --blue:#6EA2FF;
-  --warn:#F2A93B; --warn-soft:#3A2A12; --over:#FF7A6B; --over-soft:#401D1F; color-scheme:dark}}
+  --paper:#141821; --card:#1E2330; --ink:#EEF0F7; --muted:#A3A8BC; --line:#2C3242;
+  --accent:#6AA2FF; --accent-ink:#FFFFFF; --accent-soft:#22314F; --flap:#262C3B;
+  --grad:linear-gradient(135deg,#14B0A9 0%,#3B7EE6 100%);
+  --hero:linear-gradient(140deg,#0F8F89 0%,#2A5FB8 60%,#4B48A8 100%);
+  --teal:#37D3CB; --yellow:#FFC24D; --green:#5AD488; --purple:#B597FF; --orange:#FF9C55; --blue:#6AA2FF;
+  --warn:#F2B04A; --warn-soft:#3A2D16; --over:#FF8270; --over-soft:#43231F;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25); color-scheme:dark}}
 
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -337,3 +344,89 @@ details.stsec[open] summary{margin-bottom:10px}
 .disclaimer{border:1px solid var(--accent);background:var(--accent-soft);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;font-size:.88rem}
 .disclaimer b{font-family:var(--f-display);font-size:.98rem}
 .disclaimer p{margin:0}
+
+/* ---------- Friendly look: warm background, soft shadows, tinted envelopes, rounded type ---------- */
+body{font-size:16px;font-variant-numeric:tabular-nums}
+h1,h2{letter-spacing:0}
+h1{font-weight:800}
+h2{font-weight:800;font-size:1.1rem}
+.label{text-transform:none;letter-spacing:0;font-size:.82rem;font-weight:700}
+.top{border-bottom:0;padding-block:12px 6px}
+.brand h1{font-size:1.3rem}
+.seg{border:0;box-shadow:var(--shadow)}
+.seg button{font-weight:700}
+.avatar{border:0;background:var(--grad);color:#fff;font-weight:800}
+.monthnav{background:var(--card);border-radius:999px;padding:4px;box-shadow:var(--shadow)}
+.monthnav>button:not(.mlabel){border:0;background:var(--paper);width:36px;height:36px}
+.mlabel{font-weight:800}
+main{gap:24px}
+
+/* Summary: one colourful card */
+.summary{background:var(--hero);color:#fff;border:0;border-radius:24px;padding:18px;box-shadow:0 10px 24px rgba(30,90,200,.22)}
+.summary .label,.summary .sub,.summary .pacenote,.summary .facts dt,.summary .legend2,.summary small{color:rgba(255,255,255,.85)}
+.stile{background:rgba(255,255,255,.14);border:0;border-radius:16px}
+.stile b{font-weight:800;font-size:1.3rem;color:#fff}
+.stile.bad{background:rgba(255,120,100,.28);border:0}
+.stile.bad b,.stile.bad .label{color:#fff}
+.splitbar{height:14px;border-radius:7px;background:rgba(255,255,255,.25)}
+.splitbar .u,.summary .legend2 .u{background:#fff}
+.splitbar .r,.summary .legend2 .r{background:rgba(255,255,255,.5)}
+.splitbar .f,.summary .legend2 .f{background:#FFD25E}
+.summary .facts dd{font-weight:800;color:#fff}
+.summary .neg{color:#FFD9D2}
+.summary .btn{background:#fff;color:#1D2340;border:0}
+.summary .pos{color:#C9FFDD}
+
+/* Envelopes: each one a soft tint of its own colour */
+.envs{gap:12px}
+.env{border:0;border-radius:20px;background:color-mix(in srgb,var(--c,var(--accent)) 11%,var(--card));box-shadow:var(--shadow);padding:28px 14px 14px}
+.env::before{height:20px;background:color-mix(in srgb,var(--c,var(--accent)) 32%,var(--card))}
+.env.over{box-shadow:inset 0 0 0 2px var(--over),var(--shadow)}
+.env .name{font-weight:800}
+.env .bal,.env .rest{font-weight:800;font-size:1.15rem}
+.env .of{font-family:var(--f-body)}
+.env .meter{height:8px;background:color-mix(in srgb,var(--c,var(--accent)) 18%,var(--card))}
+.pill{font-weight:800}
+
+/* Cards, lists and sheets */
+.empty,.panel,.tile,.card,.appr{border:0;border-radius:20px;box-shadow:var(--shadow)}
+.empty{border:2px dashed var(--line);box-shadow:none}
+.ledger{background:var(--card);border-radius:20px;box-shadow:var(--shadow);padding:6px 16px}
+.day:not(:last-child) .tx:last-child{border-bottom:0}
+.dayhead{padding-top:10px}
+.tx{border-bottom:1px solid var(--line)}
+.day .tx:last-child{border-bottom:0}
+.tx .note{font-weight:700}
+.tx .amt{font-weight:800}
+.chip{border:0;box-shadow:var(--shadow);font-weight:700}
+.btn{border-radius:14px;font-weight:800}
+.btn.primary{box-shadow:0 6px 14px rgba(30,110,220,.25)}
+.fab{font-weight:800}
+.sheet{border-radius:26px 26px 0 0;background:var(--paper)}
+.sheet-actions{background:var(--paper)}
+input,select{background:var(--card);border-color:var(--line);border-radius:14px}
+.amount{font-weight:800}
+.picked{background:color-mix(in srgb,var(--c,var(--accent)) 14%,var(--card));border:0;border-radius:20px;box-shadow:var(--shadow)}
+.picked-top h2{font-weight:800}
+.picked-stats b{font-weight:800}
+.after{font-family:var(--f-body);font-weight:700}
+.envtile{border:0;background:color-mix(in srgb,var(--c,var(--accent)) 12%,var(--card));border-left:6px solid var(--c,var(--accent));box-shadow:var(--shadow)}
+.envtile .b{font-family:var(--f-body)}
+.note,.privacy,.stwarn{border-radius:14px}
+.stile small,.stfacts small{line-height:1.35}
+td,th{font-family:var(--f-body)}
+#toast{font-weight:700}
+
+/* This envelope's spends this month, shown inside the add / pay sheets */
+.envtx{display:flex;flex-direction:column;gap:6px}
+.envtx .head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.envtx ul{list-style:none;margin:0;padding:4px 14px;background:var(--card);border-radius:18px;box-shadow:var(--shadow)}
+.envtx li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.envtx li:last-child{border-bottom:0}
+.envtx .w{min-width:0}
+.envtx .w b{display:block;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.envtx .w small{color:var(--muted);font-size:.8rem}
+.envtx .a{font-weight:800}
+.envtx .none{margin:0;color:var(--muted);font-size:.9rem;padding:4px 2px}
+.env.warn::before{background:color-mix(in srgb,var(--c,var(--accent)) 32%,var(--card))}
+.env.warn .meter i{background:var(--orange)}

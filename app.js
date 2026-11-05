@@ -539,6 +539,22 @@ function renderPick(s) {
   $('#add-envs').innerHTML = envTiles(s, addEnv);
   renderAddSummary();
 }
+// The chosen envelope's spends this month, newest first (shown under the add and pay forms).
+function envTxnsHTML(s, e) {
+  const list = s.t.filter(x => x.envelopeId === e.id).sort((a, b) => b.date.localeCompare(a.date) || (b.at || 0) - (a.at || 0));
+  const total = list.reduce((a, x) => a + x.amount, 0);
+  const head = `<div class="head"><h2>${esc(e.name)} in ${label(cur, true)}</h2><span class="label">${list.length ? `${list.length} · ${fmt(total)}` : ''}</span></div>`;
+  if (!list.length) return head + `<p class="none">Nothing logged in this envelope yet this month.</p>`;
+  return head + '<ul>' + list.map(x => {
+    const d = new Date(x.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    const who = partnerIds().length ? ' · ' + whoName(x.by) : '';
+    const tag = x.override ? ' · override' : x.breach ? ' · limit broken' : '';
+    return `<li><span class="w"><b>${esc(x.note || x.payeeName || e.name)}</b><small>${d}${esc(who)}${tag}</small></span><span class="a">${fmt(x.amount)}</span><button class="del" data-edit-tx="${esc(x.id)}">Edit</button></li>`;
+  }).join('') + '</ul>';
+}
+function showEnvTxns(box, s, e) { box.hidden = !e; if (e) box.innerHTML = envTxnsHTML(s, e); }
+for (const id of ['#add-txns', '#pay-txns']) $(id).addEventListener('click', ev => { const b = ev.target.closest('[data-edit-tx]'); if (b) { closeSheets(); openEdit(b.dataset.editTx); } });
+
 // How a spend that goes over an envelope's limit is treated: an emergency override if one is left and it's within the cap.
 function overInfo(e, amt, s) {
   const over = amt - Math.max((+e.limit || 0) - (s.byEnv[e.id] || 0), 0), left = overridesLeft(cur);
@@ -547,6 +563,8 @@ function overInfo(e, amt, s) {
 function renderAddSummary() {
   const s = stats(cur), e = s.env.find(x => x.id === addEnv);
   $('#f-add-reason').hidden = true;
+  showEnvTxns($('#add-txns'), s, e);
+  if (e) $('.picked').style.setProperty('--c', envColor(s, e));
   if (!e) { $('#add-env-name').textContent = 'Pick an envelope'; $('#add-spent').textContent = '—'; $('#add-left').textContent = '—'; $('#add-after').hidden = true; $('#f-add-past').hidden = true; $('#add-pay').hidden = cur !== THIS; $('#add-save').textContent = 'Already paid, just log it'; $('#add-date-more').hidden = false; return; }
   const lim = +e.limit || 0, sp = s.byEnv[e.id] || 0, left = lim - sp, amt = parseFloat($('#add-amount').value) || 0, save = isSave(e);
   // Savings envelopes can record money saved before this month; that never touches this month's salary.
@@ -892,6 +910,7 @@ function renderPay() {
     $('#pay-why').textContent = pay.picked ? '' : why;
   }
   if (showList) $('#pay-envs').innerHTML = envTiles(s, pay.envId);
+  showEnvTxns($('#pay-txns'), s, chosen && !pay.showList ? chosen : null);
 
   const e = s.env.find(x => x.id === pay.envId), warn = $('#pay-warn');
   pay.needOverride = false; pay.blocked = false; warn.hidden = true; $('#f-pay-reason').hidden = true; $('#pay-raise').hidden = true;

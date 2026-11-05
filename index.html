@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; frame-src https://*.firebaseapp.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; frame-src https://*.firebaseapp.com; object-src 'none'; base-uri 'self'; form-action 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>SpendWise India</title>
 <meta name="description" content="Shared envelope budget: monthly limits, every spend logged, balances and trends.">
-<meta name="theme-color" content="#F3F6FC" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0A1126" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#FBF6EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141821" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/favicon-64.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -15,9 +15,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="SpendWise">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preload" href="vendor/fonts/plus-jakarta-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -124,6 +122,7 @@
     <label class="check" id="f-add-past" hidden><input type="checkbox" id="add-past"> <span>Saved before this month<br><small class="quiet">Adds to “saved to date” only. This month’s salary isn’t affected.</small></span></label>
     <div class="field"><label for="add-note">What is it for? (optional)</label><input id="add-note" type="text" maxlength="80" placeholder="e.g. Big Basket order"></div>
     <details class="more" id="add-date-more"><summary>Different date</summary><div class="field"><label for="add-date">Date</label><input id="add-date" type="date"></div></details>
+    <div id="add-txns" class="envtx" hidden></div>
     <div class="sheet-actions" id="add-actions">
       <p id="add-err" class="err" hidden></p>
       <div class="row">
@@ -181,6 +180,7 @@
       <div class="field" id="f-pay-reason" hidden><label for="pay-reason">Reason for the emergency override (required)</label><input id="pay-reason" type="text" maxlength="120" placeholder="e.g. Pharmacy for fever medicine"></div>
       <button id="pay-raise" class="btn small" hidden style="align-self:flex-start">Edit envelopes</button>
       <div class="field"><label for="pay-note">What is it for? (optional, stays private in SpendWise)</label><input id="pay-note" type="text" maxlength="80" placeholder="e.g. Weekly vegetables"></div>
+      <div id="pay-txns" class="envtx" hidden></div>
       <div class="sheet-actions" id="pay-actions">
         <div id="pay-apps" class="payapps"></div>
         <div class="row"><button id="pay-back" class="btn ghost small">Scan again</button><button class="btn ghost small" data-close>Cancel</button></div>
