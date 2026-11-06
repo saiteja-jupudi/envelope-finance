@@ -433,3 +433,21 @@ td,th{font-family:var(--f-body)}
 /* Every envelope gets a border in a deeper shade of its own colour; over-limit ones switch to red. */
 .env{border:2px solid color-mix(in srgb,var(--c,var(--accent)) 55%,var(--card))}
 .env.over{border-color:var(--over);box-shadow:var(--shadow)}
+
+/* Savings tiles on the home screen: just the running total */
+.env.save.compact{padding-bottom:16px;gap:6px}
+.env .todate{display:flex;flex-direction:column;gap:2px}
+.env .todate small{font-size:.82rem;color:var(--muted);font-weight:600}
+.env .todate b{font-size:1.35rem;font-weight:800;color:var(--green)}
+.pill.ok{background:color-mix(in srgb,var(--green) 16%,var(--card));color:var(--green);align-self:flex-start}
+/* ...and the details when one is opened */
+.savedetail{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.savedetail .meter{display:block;height:8px;border-radius:4px;background:color-mix(in srgb,var(--c,var(--accent)) 18%,var(--card));overflow:hidden}
+.savedetail .meter i{display:block;height:100%;background:var(--green);border-radius:4px}
+.savedetail .total{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding-top:8px;border-top:1px dashed var(--line)}
+.savedetail .total small{color:var(--muted);font-size:.85rem}
+.savedetail .total b{font-weight:800;font-size:1.15rem;color:var(--green)}
+.savedetail .plan{display:flex;flex-direction:column;gap:4px;font-size:.88rem;color:var(--muted);padding-top:8px;border-top:1px dashed var(--line)}
+.savedetail .plan b{color:var(--ink);font-weight:800}
+.savedetail .plan .sublabel{font-weight:700;color:var(--ink);font-size:.85rem}
+.savedetail .plan .ret{margin-top:4px;padding:8px 10px;border-radius:10px;line-height:1.4}

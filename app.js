@@ -297,18 +297,14 @@ function renderMonth() {
   if (s.saveEnv.length) {
     html += `<section><div class="sechead"><h2>Savings &amp; investments</h2><button class="link" data-act="funds">Plans &amp; balances</button></div><div class="envs">`;
     for (const e of s.saveEnv) {
-      const sv = s.byEnv[e.id] || 0, tgt = +e.limit || 0, w = tgt ? Math.min(100, sv / tgt * 100) : (sv ? 100 : 0);
-      const ft = fundTotal(e), mkt = MARKET_RE.test(e.name), verb = mkt ? 'invested' : 'saved', done = tgt > 0 && sv >= tgt;
-      const plan = planHTML(e), due = Math.max(0, tgt - sv);
+      const sv = s.byEnv[e.id] || 0, tgt = +e.limit || 0;
+      const ft = fundTotal(e), mkt = MARKET_RE.test(e.name), done = tgt > 0 && sv >= tgt;
       // Top block = this month only. A fixed-term plan adds a separate "Whole plan" block below.
-      html += `<button class="env save${done ? ' done' : ''}${plan ? ' wide' : ''}" style="--c:${envColor(s, e)}" data-act="addto" data-env="${esc(e.id)}">
-        <span class="name">${esc(e.name)} <span class="cap">(${fmt(tgt)} a month)</span></span>
-        <span class="sublabel">${label(cur, true)}</span>
-        <span class="of">${fmt(sv)} ${verb} out of ${fmt(tgt)}</span>
-        <span class="bal"><small>${done ? 'This month:' : 'Due this month:'}</small> ${done ? 'Paid' + (sv > tgt ? ' (+' + fmt(sv - tgt) + ' extra)' : '') : fmt(due)}</span>
-        <span class="meter"><i style="width:${w}%"></i></span>
-        <span class="total"><small>${mkt ? 'Invested to date (not market value)' : 'Saved to date'}</small><b>${fmt(ft.total)}</b></span>
-        ${plan}
+      // Home shows only the running total; this month's progress and the whole plan open on tap.
+      html += `<button class="env save compact${done ? ' done' : ''}" style="--c:${envColor(s, e)}" data-act="addto" data-env="${esc(e.id)}">
+        <span class="name">${esc(e.name)}</span>
+        <span class="todate"><small>${mkt ? 'Invested to date' : 'Saved to date'}</small><b>${fmt(ft.total)}</b></span>
+        ${done ? '<span class="pill ok">Paid this month</span>' : ''}
       </button>`;
     }
     html += `</div></section>`;
@@ -509,8 +505,19 @@ function cumChart(el, k) {
 }
 
 /* ---------- sheets ---------- */
-function openSheet(id) { $('#backdrop').hidden = false; $('#' + id).hidden = false; }
-function closeSheets() { stopScan(); $('#backdrop').hidden = true; for (const id of ['addSheet', 'planSheet', 'acctSheet', 'paySheet', 'confirmSheet', 'fundsSheet', 'editSheet', 'stmtSheet']) $('#' + id).hidden = true; }
+// The phone's back button closes an open sheet instead of leaving the app:
+// opening a sheet adds one history entry; going back (button or gesture) closes it.
+const SHEETS = ['addSheet', 'planSheet', 'acctSheet', 'paySheet', 'confirmSheet', 'fundsSheet', 'editSheet', 'stmtSheet'];
+let sheetEntry = false;
+const anySheetOpen = () => SHEETS.some(id => !$('#' + id).hidden);
+function pushSheetEntry() { if (!sheetEntry) { history.pushState({ sheet: true }, ''); sheetEntry = true; } }
+function openSheet(id) { pushSheetEntry(); $('#backdrop').hidden = false; $('#' + id).hidden = false; }
+function closeSheets(fromBack) {
+  stopScan(); $('#backdrop').hidden = true; for (const id of SHEETS) $('#' + id).hidden = true;
+  // Closed with Cancel/Save: drop our history entry, unless another sheet opens straight after (switching sheets).
+  if (!fromBack) setTimeout(() => { if (sheetEntry && !anySheetOpen()) { sheetEntry = false; history.back(); } }, 0);
+}
+window.addEventListener('popstate', () => { sheetEntry = false; if (anySheetOpen()) closeSheets(true); });
 
 function openAdd(envId) {
   const s = stats(cur); if (!s.plan) return;
@@ -569,6 +576,12 @@ function renderAddSummary() {
   const lim = +e.limit || 0, sp = s.byEnv[e.id] || 0, left = lim - sp, amt = parseFloat($('#add-amount').value) || 0, save = isSave(e);
   // Savings envelopes can record money saved before this month; that never touches this month's salary.
   $('#f-add-past').hidden = !save;
+  const sd = $('#add-savedetail'); sd.hidden = !save;
+  if (save) {
+    const ft = fundTotal(e), mkt = MARKET_RE.test(e.name), w = lim ? Math.min(100, sp / lim * 100) : (sp ? 100 : 0);
+    sd.innerHTML = `<span class="meter"><i style="width:${w}%"></i></span>
+      <span class="total"><small>${mkt ? 'Invested to date (not market value)' : 'Saved to date'}</small><b>${fmt(ft.total)}</b></span>${planHTML(e)}`;
+  }
   const past = save && $('#add-past').checked;
   $('#add-pay').hidden = past || cur !== THIS;
   $('#add-save').textContent = past ? 'Add to saved to date' : 'Already paid, just log it';
@@ -998,7 +1011,7 @@ function showConfirm(p) {
   $('#confirmText').textContent = `Did your ${fmt(p.amount)} payment to ${p.payeeName} go through?`;
   $('#confirmSub').textContent = `It will be logged under ${p.envelopeName}${p.override ? ' as an emergency override' : ''}.`;
   $('#confirmSheet').dataset.p = JSON.stringify(p);
-  $('#backdrop').hidden = false; $('#confirmSheet').hidden = false;
+  pushSheetEntry(); $('#backdrop').hidden = false; $('#confirmSheet').hidden = false;
 }
 $('#confirmYes').addEventListener('click', () => { const p = JSON.parse($('#confirmSheet').dataset.p || 'null'); clearPending(); closeSheets(); if (p) logPayment(p); });
 $('#confirmNo').addEventListener('click', () => { clearPending(); closeSheets(); toast('Nothing logged.'); });
@@ -1404,8 +1417,8 @@ $('#main').addEventListener('click', ev => {
 });
 $('#fab').addEventListener('click', () => openAdd());
 $('#fabPay').addEventListener('click', () => openPay());
-$('#backdrop').addEventListener('click', closeSheets);
-document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
+$('#backdrop').addEventListener('click', () => closeSheets());
+document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeSheets()));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheets(); });
 $('#prev').addEventListener('click', () => { cur = shiftKey(cur, -1); filterEnv = 'all'; render(); });
 $('#next').addEventListener('click', () => { cur = shiftKey(cur, 1); filterEnv = 'all'; render(); });
