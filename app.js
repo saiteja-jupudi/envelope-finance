@@ -150,7 +150,7 @@ function openHousehold(id) {
   const onErr = e => { console.error(e); status(e.code === 'permission-denied' ? 'You no longer have access to this household.' : 'Lost the connection to your data. Reopen the app to reconnect.'); };
   unsubs.push(onSnapshot(hhRef(), s => { household = s.exists() ? s.data() : null; render(); }, onErr));
   unsubs.push(onSnapshot(collection(fs, 'households', id, 'months'), s => {
-    months = {}; s.forEach(d => months[d.id] = d.data()); loadedM = true; render();
+    months = {}; s.forEach(d => months[d.id] = d.data()); loadedM = true; render(); setTimeout(checkDecisions, 300);
   }, onErr));
   unsubs.push(onSnapshot(collection(fs, 'households', id, 'txns'), s => {
     txns = []; s.forEach(d => { const x = d.data(); if (x.month && typeof x.amount === 'number') txns.push({ id: d.id, ...x }); }); loadedT = true; render();
@@ -159,11 +159,11 @@ function openHousehold(id) {
     const next = []; s.forEach(d => { const r = d.data(); if (Array.isArray(r.changes)) next.push({ id: d.id, ...r }); });
     for (const r of next) {
       const prev = seenReq.get(r.id);
-      if (prev === 'pending' && r.status !== 'pending' && r.requestedBy === me.uid)
-        toast(`${cap(whoName(r.decidedBy))} ${r.status === 'approved' ? 'approved' : 'declined'} your limit request`);
+      if (prev === 'pending' && r.status === 'approved' && r.requestedBy === me.uid)
+        toast(`${cap(whoName(r.decidedBy))} approved your request`);
       seenReq.set(r.id, r.status);
     }
-    requests = next; render();
+    requests = next; render(); setTimeout(checkDecisions, 300);
   }, onErr));
   unsubs.push(onSnapshot(collection(fs, 'households', id, 'payees'), s => {
     payees = {}; s.forEach(d => payees[d.id] = d.data());
@@ -346,6 +346,7 @@ function describeChange(c) {
     if ((a.note || '') !== (b.note || '')) bits.push('note changed');
     return `<li><b>Edit</b> ${esc(b.envelopeName || 'entry')} <span class="quiet">(${when})</span>: ${bits.join(' · ') || 'no change'}</li>`;
   }
+  if (c.isNew) return `<li><b>New envelope: ${esc(c.name)}</b> <span class="mono">${fmt(c.to)}</span></li>`;
   return `<li><b>${esc(c.name)}</b> <span class="mono">${fmtRule(c, c.from)} → ${fmtRule(c, c.to)}</span> <span class="up">+${fmtRule(c, c.to - c.from)}</span></li>`;
 }
 
@@ -375,10 +376,12 @@ function decideRequest(id, approve) {
       const envs = plan ? plan.envelopes.map(e => ({ ...e })) : [];
       for (const c of envChanges) {
         const e = envs.find(x => x.id === c.envelopeId);
-        if (e) e.limit = Math.max(+e.limit || 0, c.to); else envs.push({ id: c.envelopeId, name: c.name, limit: c.to });
+        if (e) e.limit = Math.max(+e.limit || 0, c.to); else envs.push({ id: c.envelopeId, name: c.name, limit: c.to, type: c.type || 'spend' });
       }
-      batch.set(doc(fs, 'households', hid, 'months', r.month), { salary: plan ? plan.salary || 0 : 0, envelopes: envs, updatedAt: Date.now(), by: me.uid });
+      batch.set(doc(fs, 'households', hid, 'months', r.month), { ...(plan || {}), salary: plan ? plan.salary || 0 : 0, envelopes: envs, updatedAt: Date.now(), by: me.uid });
     }
+  } else {
+    removeDeclinedEnvelopes(batch, r);
     if (ruleChanges.length) {
       const upd = {}; for (const c of ruleChanges) upd['rules.' + c.key] = c.to;
       batch.update(hhRef(), upd);
@@ -389,6 +392,45 @@ function decideRequest(id, approve) {
   const isTxn = r.changes.some(c => c.kind === 'txn');
   toast(approve ? (isTxn ? 'Approved. The entry is updated.' : 'Approved. The new limits apply now.') : (isTxn ? 'Declined. The entry stays as it was.' : 'Declined. The limits stay as they were.'));
 }
+
+// A declined new envelope must not stay behind with a ₹0 limit (older versions added it before approval).
+function removeDeclinedEnvelopes(batch, r) {
+  const plan = months[r.month]; if (!plan) return false;
+  const gone = new Set(r.changes.filter(c => !c.kind && (c.isNew || c.from === 0)).map(c => c.envelopeId)
+    .filter(id => { const e = plan.envelopes.find(x => x.id === id); return e && !(+e.limit) && !txns.some(t => t.month === r.month && t.envelopeId === id); }));
+  if (!gone.size) return false;
+  batch.set(doc(fs, 'households', hid, 'months', r.month), { ...plan, envelopes: plan.envelopes.filter(e => !gone.has(e.id)), updatedAt: Date.now(), by: me.uid });
+  return true;
+}
+
+// Tell the person who asked when their request is declined, once per phone, even if the app was closed at the time.
+const SEEN_KEY = 'sw.seenDecisions';
+const seenDecisions = () => { try { return JSON.parse(localStorage.getItem(SEEN_KEY)) || []; } catch { return []; } };
+let noticeOpen = null;
+function checkDecisions() {
+  if (noticeOpen || !me || !loadedM) return;
+  const seen = seenDecisions(), weekAgo = Date.now() - 7 * 864e5;
+  const r = requests.filter(x => x.requestedBy === me.uid && x.status === 'declined' && (x.decidedAt || 0) > weekAgo && !seen.includes(x.id))
+    .sort((a, b) => (a.decidedAt || 0) - (b.decidedAt || 0))[0];
+  if (!r || anySheetOpen()) return;
+  noticeOpen = r.id;
+  const who = cap(whoName(r.decidedBy));
+  $('#noticeTitle').textContent = `${who} declined your request`;
+  $('#noticeList').innerHTML = r.changes.map(c => {
+    if (c.kind === 'txn') return `<li>Your change to a logged ${fmt((c.before || {}).amount || 0)} entry was not made.</li>`;
+    if (c.kind === 'rule') return `<li>${esc(c.name)} stays at ${fmtRule(c, c.from)} (you asked for ${fmtRule(c, c.to)}).</li>`;
+    if (c.isNew || c.from === 0) return `<li>New envelope <b>${esc(c.name)}</b> (${fmt(c.to)}) was not added.</li>`;
+    return `<li><b>${esc(c.name)}</b> stays at ${fmt(c.from)} (you asked for ${fmt(c.to)}).</li>`;
+  }).join('');
+  $('#noticeSub').textContent = `${label(r.month)}${r.reason ? ' · Your reason: “' + r.reason + '”' : ''}`;
+  // Clean up any ₹0 envelope an older version left behind.
+  const batch = writeBatch(fs); if (removeDeclinedEnvelopes(batch, r)) batch.commit().catch(console.error);
+  openSheet('noticeSheet');
+}
+$('#noticeOk').addEventListener('click', () => {
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify([...seenDecisions(), noticeOpen].slice(-50))); } catch { /* shows again next time */ }
+  noticeOpen = null; closeSheets(); setTimeout(checkDecisions, 400);
+});
 
 function ledgerHTML(s) {
   const names = Object.fromEntries(s.env.map(e => [e.id, e.name]));
@@ -507,7 +549,7 @@ function cumChart(el, k) {
 /* ---------- sheets ---------- */
 // The phone's back button closes an open sheet instead of leaving the app:
 // opening a sheet adds one history entry; going back (button or gesture) closes it.
-const SHEETS = ['addSheet', 'planSheet', 'acctSheet', 'paySheet', 'confirmSheet', 'fundsSheet', 'editSheet', 'stmtSheet'];
+const SHEETS = ['addSheet', 'planSheet', 'acctSheet', 'paySheet', 'confirmSheet', 'fundsSheet', 'editSheet', 'stmtSheet', 'noticeSheet'];
 let sheetEntry = false;
 const anySheetOpen = () => SHEETS.some(id => !$('#' + id).hidden);
 function pushSheetEntry() { if (!sheetEntry) { history.pushState({ sheet: true }, ''); sheetEntry = true; } }
@@ -727,11 +769,12 @@ $('#plan-save').addEventListener('click', () => {
   // Increases become a request; everything else applies now.
   const prevById = Object.fromEntries(prev.envelopes.map(e => [e.id, e]));
   const changes = [];
-  const applied = envs.map(e => {
-    const from = prevById[e.id] ? (+prevById[e.id].limit || 0) : 0;
+  const applied = envs.flatMap(e => {
+    const isNew = !prevById[e.id], from = isNew ? 0 : (+prevById[e.id].limit || 0);
     // Only spending increases need approval; raising a savings target applies at once.
-    if (e.limit > from && e.type !== 'save') { changes.push({ envelopeId: e.id, name: e.name, from, to: e.limit }); return { ...e, limit: from }; }
-    return e;
+    // A new spending envelope stays out of the list until it is approved.
+    if (e.limit > from && e.type !== 'save') { changes.push({ envelopeId: e.id, name: e.name, from, to: e.limit, ...(isNew ? { isNew: true, type: 'spend' } : {}) }); return isNew ? [] : [{ ...e, limit: from }]; }
+    return [e];
   });
   const batch = writeBatch(fs);
   batch.set(monthRef, { salary, envelopes: applied, limitOverrides: lo, updatedAt: Date.now(), by: me.uid });
