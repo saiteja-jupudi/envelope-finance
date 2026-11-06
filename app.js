@@ -323,7 +323,7 @@ function approvalsHTML() {
     const mine = r.requestedBy === me.uid, isTxn = r.changes.some(c => c.kind === 'txn');
     const lines = r.changes.map(describeChange).join('');
     h += `<div class="appr ${mine ? 'mine' : ''}">
-      <p class="who">${mine ? 'You asked ' + esc(partnerLabel()) : esc(cap(whoName(r.requestedBy))) + (isTxn ? ' asks to change a logged entry' : ' asks to raise')} · ${label(r.month, true)}</p>
+      <p class="who">${mine ? 'You asked ' + esc(partnerLabel()) : esc(cap(whoName(r.requestedBy))) + (isTxn ? ' asks to change a logged entry' : r.changes.every(c => c.isNew) ? ' asks to add' : ' asks to raise')} · ${label(r.month, true)}</p>
       <ul>${lines}</ul>${r.reason ? `<p class="reason">“${esc(r.reason)}”</p>` : ''}
       <div class="row">${mine
         ? `<button class="btn small" data-act="rq-cancel" data-id="${esc(r.id)}">Withdraw request</button>`
@@ -380,12 +380,12 @@ function decideRequest(id, approve) {
       }
       batch.set(doc(fs, 'households', hid, 'months', r.month), { ...(plan || {}), salary: plan ? plan.salary || 0 : 0, envelopes: envs, updatedAt: Date.now(), by: me.uid });
     }
-  } else {
-    removeDeclinedEnvelopes(batch, r);
     if (ruleChanges.length) {
       const upd = {}; for (const c of ruleChanges) upd['rules.' + c.key] = c.to;
       batch.update(hhRef(), upd);
     }
+  } else {
+    removeDeclinedEnvelopes(batch, r);
   }
   batch.update(doc(fs, 'households', hid, 'requests', id), { status: approve ? 'approved' : 'declined', decidedBy: me.uid, decidedAt: Date.now() });
   batch.commit().catch(x => { console.error(x); toast('Could not save your answer. Try again.'); });
@@ -778,9 +778,11 @@ $('#plan-save').addEventListener('click', () => {
   });
   const batch = writeBatch(fs);
   batch.set(monthRef, { salary, envelopes: applied, limitOverrides: lo, updatedAt: Date.now(), by: me.uid });
-  if (changes.length) batch.set(doc(collection(fs, 'households', hid, 'requests')), {
-    month: cur, changes, reason: $('#plan-reason').value.trim(), status: 'pending', requestedBy: me.uid, requestedAt: Date.now()
-  });
+  // One request per envelope, so the partner can approve or decline each separately.
+  const reason = $('#plan-reason').value.trim(), now = Date.now();
+  changes.forEach((c, i) => batch.set(doc(collection(fs, 'households', hid, 'requests')), {
+    month: cur, changes: [c], reason, status: 'pending', requestedBy: me.uid, requestedAt: now + i
+  }));
   batch.commit().catch(saveFail);
   closeSheets();
   toast(changes.length
@@ -827,7 +829,8 @@ $('#saveRules').addEventListener('click', () => {
   if (later) direct.rulesNext = { overridesPerMonth: Math.max(next.overridesPerMonth, 0), overrideCap: Math.max(next.overrideCap, 0), from: shiftKey(THIS, 1) };
   const batch = writeBatch(fs);
   batch.update(hhRef(), direct);
-  if (changes.length) batch.set(doc(collection(fs, 'households', hid, 'requests')), { month: THIS, changes, reason: '', status: 'pending', requestedBy: me.uid, requestedAt: Date.now() });
+  const now = Date.now();
+  changes.forEach((c, i) => batch.set(doc(collection(fs, 'households', hid, 'requests')), { month: THIS, changes: [c], reason: '', status: 'pending', requestedBy: me.uid, requestedAt: now + i }));
   batch.commit().catch(x => { console.error(x); msg(m, 'Could not save the rules. Try again.'); });
   msg(m, changes.length ? `Saved. The override increase is waiting for ${partnerLabel()} to approve.` : later ? `Saved. The higher override numbers start from ${label(shiftKey(THIS, 1))}.` : 'Rules saved.', true);
 });
