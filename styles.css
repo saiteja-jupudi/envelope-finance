@@ -452,3 +452,10 @@ td,th{font-family:var(--f-body)}
 .savedetail .plan .sublabel{font-weight:700;color:var(--ink);font-size:.85rem}
 .savedetail .plan .ret{margin-top:4px;padding:8px 10px;border-radius:10px;line-height:1.4}
 .noticelist{margin:4px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+
+/* Header: logo and name on the left, profile button top right, Month/Trends below (beside the name on wide screens) */
+.brand{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name me" "tabs tabs";align-items:center;gap:10px 12px}
+.brand-l{grid-area:name}
+.brand>.avatar{grid-area:me;justify-self:end}
+.brand-r{grid-area:tabs}
+@media (min-width:640px){.brand{grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"name tabs me"}}
