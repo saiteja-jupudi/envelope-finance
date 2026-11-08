@@ -835,40 +835,117 @@ $('#saveRules').addEventListener('click', () => {
   msg(m, changes.length ? `Saved. The override increase is waiting for ${partnerLabel()} to approve.` : later ? `Saved. The higher override numbers start from ${label(shiftKey(THIS, 1))}.` : 'Rules saved.', true);
 });
 
-/* ---------- Pay with UPI: SpendWise tracks, the UPI app pays ---------- */
-// UPI apps now refuse pre-filled payment links from other apps ("payment through links" error),
-// so SpendWise only opens the chosen UPI app. The user scans and pays there, comes back, and confirms.
-const UPI_APPS = [
-  { id: 'phonepe', name: 'PhonePe', scheme: 'phonepe', pkg: 'com.phonepe.app' },
-  { id: 'gpay', name: 'Google Pay', scheme: 'tez', pkg: 'com.google.android.apps.nbu.paisa.user' },
-  { id: 'paytm', name: 'Paytm', scheme: 'paytmmp', pkg: 'net.one97.paytm' },
-];
+/* ---------- Scan & Pay ---------- */
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isAndroid = /Android/i.test(navigator.userAgent);
-// Android: open the app by package (Play Store if it isn't installed). iPhone: its URL scheme.
-const appUrl = a => isAndroid ? `intent://#Intent;scheme=${a.scheme};package=${a.pkg};end` : `${a.scheme}://`;
-const LASTAPP_KEY = 'sw.lastUpiApp', PENDING_KEY = 'envelopes.pendingPayment';
-let pay = null;
-function stopScan() { /* scanning now happens inside the UPI app */ }
-const payeeKey = s => String(s).toLowerCase().trim().replace(/[^a-z0-9._@-]+/g, '_');
+const IOS_APPS = [
+  { name: 'Google Pay', prefix: 'tez://upi/pay?' },
+  { name: 'PhonePe', prefix: 'phonepe://pay?' },
+  { name: 'Paytm', prefix: 'paytmmp://upi/pay?' },
+];
+const PENDING_KEY = 'envelopes.pendingPayment';
+let pay = null, scanStream = null, scanTimer = null;
 
+function parseUPI(text) {
+  text = String(text || '').trim();
+  if (!/^upi:\/\/pay\?/i.test(text)) return null;
+  const q = new URLSearchParams(text.slice(text.indexOf('?') + 1));
+  const pa = (q.get('pa') || '').trim();
+  if (!/^[\w.\-]{2,256}@[\w.\-]{2,64}$/.test(pa)) return null;
+  const am = parseFloat(q.get('am') || '');
+  return { pa, pn: (q.get('pn') || '').trim(), am: am > 0 ? am : 0, params: q };
+}
+const payeeKey = pa => pa.toLowerCase().replace(/[^a-z0-9._@-]/g, '_');
+
+let payPreset = null;
 function openPay(preset) {
   if (!months[THIS]) { cur = THIS; render(); toast('Set up this month’s envelopes first.'); return; }
   cur = THIS; render();
-  const p = preset && preset.envId ? preset : null;
-  pay = { envId: p ? p.envId : null, picked: !!p, showList: false };
-  $('#pay-amount').value = p ? p.amount : ''; $('#pay-to').value = '';
-  $('#pay-note').value = p ? (p.note || '') : ''; $('#pay-reason').value = '';
-  openSheet('paySheet'); $('#paySheet').scrollTop = 0; renderPay();
-  if (!p) setTimeout(() => $('#pay-amount').focus(), 60);
+  payPreset = preset && preset.envId ? preset : null;
+  pay = null; $('#pay-vpa').value = ''; $('#pay-pn').value = ''; msg($('#scanMsg'), '');
+  const e = payPreset && stats(cur).env.find(x => x.id === payPreset.envId);
+  $('#scanTitle').textContent = e ? `Pay ${fmt(payPreset.amount)} from ${e.name}` : 'Scan & Pay';
+  showPayStep('scan'); openSheet('paySheet'); startScan();
+}
+function showPayStep(step) { $('#pay-scan').hidden = step !== 'scan'; $('#pay-details').hidden = step !== 'details'; }
+
+async function startScan() {
+  const v = $('#scanVideo'), m = $('#scanMsg');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('#scanBox').hidden = true; return msg(m, 'The camera isn’t available here. Upload a photo of the QR, or enter the UPI ID.'); }
+  $('#scanBox').hidden = false;
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    if ($('#paySheet').hidden) { stopScan(); return; }
+    v.srcObject = scanStream; await v.play();
+    const det = 'BarcodeDetector' in window ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+    const c = document.createElement('canvas'), ctx = c.getContext('2d', { willReadFrequently: true });
+    const tick = async () => {
+      if (!scanStream) return;
+      if (v.readyState >= 2 && v.videoWidth) {
+        let text = null;
+        try {
+          if (det) { const r = await det.detect(v); if (r[0]) text = r[0].rawValue; }
+          else if (window.jsQR) {
+            const s = Math.min(1, 640 / v.videoWidth); c.width = v.videoWidth * s; c.height = v.videoHeight * s;
+            ctx.drawImage(v, 0, 0, c.width, c.height);
+            const r = jsQR(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: 'dontInvert' });
+            if (r) text = r.data;
+          }
+        } catch { /* keep scanning */ }
+        if (text) { const p = parseUPI(text); if (p) { stopScan(); gotPayee(p); return; } msg(m, 'That QR isn’t a UPI payment code.'); }
+      }
+      scanTimer = setTimeout(tick, 250);
+    };
+    tick();
+  } catch { $('#scanBox').hidden = true; msg(m, 'Camera access was refused. Upload a photo of the QR, or enter the UPI ID.'); }
+}
+function stopScan() { clearTimeout(scanTimer); if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; } }
+
+$('#qrFile').addEventListener('change', async ev => {
+  const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  const m = $('#scanMsg');
+  try {
+    const bmp = await createImageBitmap(f);
+    const s = Math.min(1, 1200 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = bmp.width * s; c.height = bmp.height * s;
+    const ctx = c.getContext('2d'); ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    let text = null;
+    if ('BarcodeDetector' in window) { const r = await new BarcodeDetector({ formats: ['qr_code'] }).detect(c); if (r[0]) text = r[0].rawValue; }
+    if (!text && window.jsQR) { const r = jsQR(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height); if (r) text = r.data; }
+    const p = text && parseUPI(text);
+    if (p) { stopScan(); gotPayee(p); } else msg(m, text ? 'That QR isn’t a UPI payment code.' : 'No QR code found in that photo. Try a closer, sharper photo.');
+  } catch { msg(m, 'Couldn’t read that photo. Try another one.'); }
+});
+$('#pay-manual').addEventListener('click', () => {
+  const pa = $('#pay-vpa').value.trim(), pn = $('#pay-pn').value.trim();
+  const p = parseUPI('upi://pay?pa=' + encodeURIComponent(pa) + (pn ? '&pn=' + encodeURIComponent(pn) : ''));
+  if (!p) return msg($('#scanMsg'), 'Enter a UPI ID like name@okhdfcbank.');
+  stopScan(); gotPayee(p);
+});
+
+function gotPayee(p) {
+  pay = { ...p, fixedAmount: p.am > 0, envId: null, picked: false, showList: false };
+  $('#payTo').textContent = p.pn || p.pa;
+  $('#payVpa').textContent = p.pn ? p.pa : '';
+  const a = $('#pay-amount'); a.value = p.am || ''; a.readOnly = pay.fixedAmount;
+  $('#pay-note').value = ''; $('#pay-reason').value = '';
+  if (payPreset) {
+    // Came from an envelope: keep that envelope, and the amount unless the QR fixes its own.
+    pay.envId = payPreset.envId; pay.picked = true;
+    if (!pay.fixedAmount) a.value = payPreset.amount;
+    $('#pay-note').value = payPreset.note || '';
+    if (pay.fixedAmount && Math.abs(p.am - payPreset.amount) > 0.009) toast(`This QR asks for ${fmt(p.am)}, not ${fmt(payPreset.amount)}.`);
+  }
+  showPayStep('details'); renderPay();
+  if (!pay.fixedAmount) setTimeout(() => a.focus(), 60);
 }
 
 function autoEnvelope(amt) {
   const s = stats(cur), r = rules();
   const misc = s.env.find(e => /^misc/i.test(e.name.trim()));
   if (amt > 0 && amt < r.miscThreshold && misc) return { id: misc.id, why: `Under ${fmt(r.miscThreshold)}, so it goes to ${misc.name}.` };
-  const to = $('#pay-to').value.trim(), mem = to && payees[payeeKey(to)];
-  if (mem && s.env.some(e => e.id === mem.envelopeId)) return { id: mem.envelopeId, why: `Used for ${to} last time.` };
+  const mem = payees[payeeKey(pay.pa)];
+  if (mem && s.env.some(e => e.id === mem.envelopeId)) return { id: mem.envelopeId, why: `Used for ${pay.pn || pay.pa} last time.` };
   return null;
 }
 
@@ -917,17 +994,22 @@ function renderPay() {
   renderPayApps(ready, amt);
 }
 
+function upiQuery(amt) {
+  const q = new URLSearchParams(pay.params.toString());
+  q.set('pa', pay.pa); if (pay.pn) q.set('pn', pay.pn);
+  if (!pay.fixedAmount) q.set('am', amt.toFixed(2));
+  q.set('cu', 'INR');
+  // Privacy: the user's own note stays in SpendWise. Only what the payee's QR already carried
+  // (payee, amount, the merchant's own reference) is passed to the UPI app.
+  return [...q].map(([k, v]) => k + '=' + encodeURIComponent(v).replace(/%40/g, '@')).join('&');
+}
+
 function renderPayApps(ready, amt) {
-  const box = $('#pay-apps'); let h = '', last = null;
-  try { last = localStorage.getItem(LASTAPP_KEY); } catch { /* no memory */ }
-  const apps = [...UPI_APPS].sort((a, b) => (b.id === last) - (a.id === last));
-  if (isAndroid || isIOS) {
-    h = `<p class="label">Pay ${amt > 0 ? fmt(amt) : ''} with</p>
-      <div class="appgrid">${apps.map((a, i) => `<button class="btn ${i ? '' : 'primary'}" data-app="${a.id}" ${ready ? '' : 'disabled'}>${a.name}</button>`).join('')}</div>
-      <p class="quiet">The app opens. Tap its scanner, scan the QR and pay. Then come back here to confirm.</p>
-      <button class="link" data-app="manual" ${ready ? '' : 'disabled'}>I’ll open my UPI app myself</button>`;
-  } else h = `<p class="quiet">Open SpendWise on your phone to pay with a UPI app. Here you can log a payment you made another way.</p>`;
-  h += `<button class="link" data-app="other" ${ready ? '' : 'disabled'}>Already paid, just log it</button>`;
+  const box = $('#pay-apps'); let h = '';
+  if (isAndroid) h = `<button class="btn primary" data-app="upi" ${ready ? '' : 'disabled'}>Pay ${amt > 0 ? fmt(amt) : ''} with a UPI app</button><p class="quiet">Your phone will list the UPI apps you have installed.</p>`;
+  else if (isIOS) h = `<p class="quiet">Pay ${amt > 0 ? fmt(amt) : ''} with:</p><div class="row">${IOS_APPS.map((a, i) => `<button class="btn ${i ? '' : 'primary'}" data-app="ios-${i}" ${ready ? '' : 'disabled'}>${a.name}</button>`).join('')}</div><p class="quiet">If nothing opens, that app isn’t installed. Try another.</p>`;
+  else h = `<p class="quiet">Open this app on your phone to pay through a UPI app. On a computer you can still log the payment after paying another way.</p>`;
+  h += `<button class="link" data-app="other" ${ready ? '' : 'disabled'}>I paid another way, just log it</button>`;
   box.innerHTML = h;
 }
 
@@ -943,7 +1025,7 @@ $('#pay-change').addEventListener('click', () => { pay.showList = true; renderPa
 function revealActions(sel) { setTimeout(() => { const el = $(sel); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 50); }
 $('#pay-amount').addEventListener('input', renderPay);
 $('#pay-reason').addEventListener('input', renderPay);
-$('#pay-to').addEventListener('input', renderPay);
+$('#pay-back').addEventListener('click', () => { pay = null; showPayStep('scan'); startScan(); });
 $('#pay-raise').addEventListener('click', () => { closeSheets(); openPlan('edit'); });
 $('#pay-apps').addEventListener('click', ev => {
   const b = ev.target.closest('[data-app]'); if (!b || b.disabled) return;
@@ -951,15 +1033,15 @@ $('#pay-apps').addEventListener('click', ev => {
   if (!e || !(amt > 0)) return;
   const pending = {
     hid, month: cur, date: todayISO(), amount: Math.round(amt * 100) / 100, envelopeId: e.id, envelopeName: e.name,
-    note: $('#pay-note').value.trim(), payeeVpa: '', payeeName: $('#pay-to').value.trim(),
+    note: $('#pay-note').value.trim(), payeeVpa: pay.pa, payeeName: pay.pn || pay.pa,
     override: !!pay.needOverride, overrideReason: pay.needOverride ? $('#pay-reason').value.trim() : '', at: Date.now(),
   };
   if (b.dataset.app === 'other') { logPayment(pending); closeSheets(); return; }
-  // Remember the payment so SpendWise asks "did it go through?" on return, even much later.
   try { localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); } catch { /* confirm sheet still shows below */ }
+  const qs = upiQuery(amt);
+  const url = b.dataset.app === 'upi' ? 'upi://pay?' + qs : IOS_APPS[+b.dataset.app.split('-')[1]].prefix + qs;
   showConfirm(pending);
-  const a = UPI_APPS.find(x => x.id === b.dataset.app);
-  if (a) { try { localStorage.setItem(LASTAPP_KEY, a.id); } catch { /* fine */ } window.location.href = appUrl(a); }
+  window.location.href = url;
 });
 
 function readPending() { try { return JSON.parse(localStorage.getItem(PENDING_KEY) || 'null'); } catch { return null; } }
@@ -972,7 +1054,7 @@ function checkPending() {
 }
 function showConfirm(p) {
   stopScan(); for (const id of ['addSheet', 'planSheet', 'acctSheet', 'paySheet']) $('#' + id).hidden = true;
-  $('#confirmText').textContent = `Did your ${fmt(p.amount)} payment${p.payeeName ? ' to ' + p.payeeName : ''} go through?`;
+  $('#confirmText').textContent = `Did your ${fmt(p.amount)} payment to ${p.payeeName} go through?`;
   $('#confirmSub').textContent = `It will be logged under ${p.envelopeName}${p.override ? ' as an emergency override' : ''}.`;
   $('#confirmSheet').dataset.p = JSON.stringify(p);
   pushSheetEntry(); $('#backdrop').hidden = false; $('#confirmSheet').hidden = false;
@@ -985,8 +1067,7 @@ function logPayment(p) {
     month: p.month, envelopeId: p.envelopeId, envelopeName: p.envelopeName, amount: p.amount, note: p.note, date: p.date,
     payeeName: p.payeeName, payeeVpa: p.payeeVpa, via: 'upi', override: p.override, overrideReason: p.overrideReason, by: me.uid, at: Date.now(),
   }).catch(x => { console.error(x); toast('That payment could not be logged. Add it with “Log spend”.'); });
-  const pk = p.payeeVpa || p.payeeName;
-  if (pk) setDoc(doc(fs, 'households', hid, 'payees', payeeKey(pk)), { vpa: p.payeeVpa || '', name: p.payeeName, envelopeId: p.envelopeId, at: Date.now() }).catch(() => {});
+  if (p.payeeVpa) setDoc(doc(fs, 'households', hid, 'payees', payeeKey(p.payeeVpa)), { vpa: p.payeeVpa, name: p.payeeName, envelopeId: p.envelopeId, at: Date.now() }).catch(() => {});
   const s = stats(p.month), e = s.env.find(x => x.id === p.envelopeId);
   const left = e ? (+e.limit || 0) - ((s.byEnv[e.id] || 0) + p.amount) : 0;
   toast(p.override ? `Logged as an emergency override on ${p.envelopeName}.` : `Logged. ${fmt(left)} left in ${p.envelopeName}.`);
